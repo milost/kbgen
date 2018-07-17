@@ -1,2 +1,18 @@
 # JetBrains IDE
 .idea
+
+### Python
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Log files
+*.log
+
+# Example files
+eswc2015-AmieRules.txt
+eswc2015.n3
+
+# Temporary files
+*.npz
