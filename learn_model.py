@@ -1,14 +1,11 @@
 import pickle
 from argparse import ArgumentParser
 
-from kb_models.model_m3 import KBModelM3
-from kb_models.model_m1 import KBModelM1
-from kb_models.model_m2 import KBModelM2
-
-from kb_models.model_emi import KBModelEMi
+from kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelEMi
 from rules import RuleSet
 
-if __name__ == '__main__':
+
+def main():
     parser = ArgumentParser()
     parser.add_argument("input", type=str, default=None, help="path to the tensor npz file")
     parser.add_argument("-m", "--model", type=str, default="M1",
@@ -23,8 +20,6 @@ if __name__ == '__main__':
 
     print(args)
     print("learning " + args.model + " model")
-
-    model_output = ""
 
     models = []
     models_output = []
@@ -68,3 +63,7 @@ if __name__ == '__main__':
         for model, model_output in zip(models, models_output):
             print("saving model to " + model_output)
             pickle.dump(model, open(model_output, "wb"))
+
+
+if __name__ == '__main__':
+    main()
