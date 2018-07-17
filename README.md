@@ -12,6 +12,18 @@ The six models described in the paper are supported:
 - M3: M2 plus horn rules
 - EM*i*: M*i* plus bias to selection of entities
 
+## Setup
+- Install requirements:
+```
+pip install -r requirements.txt
+```
+- If you use conda on macOS you also need to install the following and use `pythonw` instead of `python` to execute the scripts. (This is needed since matplotlib needs a python framework build as dependency.)
+```
+conda install python.app
+```
+- The knowledge graph model M3 requires a text file containing horn rules learned with
+[`AMIE`](https://www.mpi-inf.mpg.de/departments/databases-and-information-systems/research/yago-naga/amie/).
+
 ## Usage
 
 For this example we use a small knowledge base from the Semantic Web dog food about the conference
@@ -50,12 +62,22 @@ For this example we use a small knowledge base from the Semantic Web dog food ab
 
  This will synthesize a replica of the dataset with 10% of the original size and dump it into ```eswc2015-replica-M1.n3```
 
+All commands together:
+```
+python load_tensor.py eswc2015.n3
+python learn_model.py eswc2015.npz -m M1
+python learn_model.py eswc2015.npz -m M2
+python learn_model.py eswc2015.npz -m M3 -r eswc2015-AmieRules.txt
+python learn_model.py eswc2015.npz -m e -sm M1 M2 M3
+python synthesize.py eswc2015-M3.pkl eswc2015-replica-M3.n3 --size 0.1
+```
 
-The bash script ```example.sh``` contains the commands of the example above.
-
-
-## Requirements
-The knowledge base creation is done with [`rdflib`](https://github.com/RDFLib/rdflib).
-The tensors are handled with [`scipy`](https://www.scipy.org/install.html), and the synthesis progress bar is done with [`tqdm`](https://pypi.python.org/pypi/tqdm).
-The knowledge graph model M3 requires a text file containing horn rules learned with
-[`AMIE`](https://www.mpi-inf.mpg.de/departments/databases-and-information-systems/research/yago-naga/amie/).
+And for macOS users:
+```
+pythonw load_tensor.py eswc2015.n3
+pythonw learn_model.py eswc2015.npz -m M1
+pythonw learn_model.py eswc2015.npz -m M2
+pythonw learn_model.py eswc2015.npz -m M3 -r eswc2015-AmieRules.txt
+pythonw learn_model.py eswc2015.npz -m e -sm M1 M2 M3
+pythonw synthesize.py eswc2015-M3.pkl eswc2015-replica-M3.n3 --size 0.1
+```
