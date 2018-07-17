@@ -148,7 +148,7 @@ class KBModelM1(KBModel):
         entity_types_dict = {}
         for i in self.dist_types.keys():
             entity_types_dict[i] = []
-        entity_types = choice(self.dist_types.keys(), n_entities, True, normalize(self.dist_types.values()))
+        entity_types = choice(list(self.dist_types.keys()), n_entities, True, normalize(self.dist_types.values()))
         type_assertions = 0
         pbar = tqdm.tqdm(total=n_entities)
         for i in range(n_entities):
@@ -227,7 +227,7 @@ class KBModelM1(KBModel):
             if rel_i in self.dist_relations.keys():
                 # rel_i = self.dist_relations.keys().index(rel_uri)
                 # rel_i = i
-                domain_i = choice(self.dist_domains_relation[rel_i].keys(), 1, p=dist_domains_relation[rel_i])
+                domain_i = choice(list(self.dist_domains_relation[rel_i].keys()), 1, p=dist_domains_relation[rel_i])
                 domain_i = domain_i[0]
                 n_entities_domain = len(entities_types[domain_i])
 

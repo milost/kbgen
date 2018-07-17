@@ -120,6 +120,6 @@ def dump_tsv(g,output_file):
 
 
 def normalize(l):
-    l_array = np.array(l).astype(float)
+    l_array = np.array(list(l)).astype(float)
     l_array /= sum(l_array)
     return l_array.tolist()

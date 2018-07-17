@@ -14,13 +14,13 @@ from util import URIEntity, URIRelation, normalize, create_logger
 
 
 class KBModelM3(KBModelM2):
-    '''
+    """
     Model based on the KBModelM2 and containing horn rules for synthesizing facts
     - Since the original distribution can be affected by the facts produced by rules, we keep
      the counts of the distributions and decrease them for every added fact, in order to make
       sure the original distribution is not disturbed.
     - Horn rules are assumed to be produced by AMIE
-    '''
+    """
 
     def __init__(self, model_naive, rules):
         assert type(model_naive) == KBModelM2
@@ -32,7 +32,7 @@ class KBModelM3(KBModelM2):
         pass
 
     def print_synthesis_details(self):
-        ''' Prints synthesis statistics for debugging purposes '''
+        """ Prints synthesis statistics for debugging purposes """
         super(KBModelM3, self).print_synthesis_details()
         self.logger.debug("exhausted: %d" % self.count_exhausted_facts)
         self.logger.debug("no entities of type: %d" % self.count_no_entities_of_type)
@@ -42,11 +42,11 @@ class KBModelM3(KBModelM2):
         self.logger.debug(self.d_r)
 
     def plot_histogram(self, vals, weights):
-        '''
+        """
         Plots a histrogram of precalculated counts (display distribution)
         :param vals: values of the bins (x axis)
         :param weights: counts of each bin (y axis)
-        '''
+        """
         x = np.array(vals)
         y = np.array(weights)
         y /= np.sum(y)
@@ -56,7 +56,7 @@ class KBModelM3(KBModelM2):
         plt.show()
 
     def start_counts(self):
-        '''Initializes various counts'''
+        """Initializes various counts"""
         self.count_facts = 0
         self.count_rule_facts = 0
         self.count_exhausted_facts = 0
@@ -68,13 +68,13 @@ class KBModelM3(KBModelM2):
         self.key_error_count = 0
 
     def validate_owl(self, r_i, s_id, o_id):
-        '''
+        """
         Validates functionality, inverse functionality and non-reflexiveness for a given fact
         :param r_i: relation id
         :param s_id: subject id
         :param o_id: object id
         :return: true if consistent, false otherwise
-        '''
+        """
         if r_i in self.func_rel_subj_pool:
             if s_id not in self.func_rel_subj_pool[r_i]:
                 self.count_violate_functionality_facts += 1
@@ -93,13 +93,13 @@ class KBModelM3(KBModelM2):
         return True
 
     def produce_rules(self, g, r_i, fact, recurr_count=0):
-        '''
+        """
         Checks if a new fact added trigger any horn rules to generate new facts
         :param g: synthesized graph
         :param r_i: id of the added relation
         :param fact: added fact
         :param recurr_count: recursion count (tracks the recursion depth)
-        '''
+        """
 
         s, p, o = fact
         if recurr_count < self.max_recurr and r_i in self.rules.rules_per_relation:
@@ -130,16 +130,25 @@ class KBModelM3(KBModelM2):
                                 self.produce_rules(g, r_i, new_fact, recurr_count + 1)
                         else:
                             self.count_exhausted_facts += 1
-                    self.query_time.debug("rule_size=%d, prod_facts=%d, new_facts=%d, query_time_micros=%d, kb_size=%d" % (len(rule.antecedents), len(new_facts), rule_added_facts, delta.microseconds, len(g)))
+
+                    rule_size = len(rule.antecedents)
+                    num_prod_facts = len(list(new_facts))
+                    num_new_facts = rule_added_facts
+                    query_time_micros = delta.microseconds
+                    kb_size = len(g)
+                    self.query_time.debug(f"rule_size={rule_size}, prod_facts={num_prod_facts}, "
+                                          f"new_facts={num_new_facts}, query_time_micros={query_time_micros}, "
+                                          f"kb_size={kb_size}")
+                    # self.query_time.debug("rule_size=%d, prod_facts=%d, new_facts=%d, query_time_micros=%d, kb_size=%d" % (len(rule.antecedents), len(new_facts), rule_added_facts, delta.microseconds, len(g)))
 
     def update_distributions(self, r_i, s_types, o_types):
-        '''
+        """
         Updates the distributions after a given fact has been added
         (decreases the step from the original distribution counts)
         :param r_i: id of the relation added
         :param s_types: multitype of the subject
         :param o_types: multitype of the object
-        '''
+        """
         step = float(self.step)
 
         if r_i in self.d_r:
@@ -158,31 +167,34 @@ class KBModelM3(KBModelM2):
         self.delete_empty_entries(r_i, s_types)
 
     def prune_distrbutions(self):
-        '''
+        """
         Prunes the original distributions based on the entities generated.
         If a given multitype does not have any instances in the synthesized data, all the entries
         in the distributions containing the given multitype are deleted
-        '''
+        """
         counts_removed = 0.0
-        for r in self.d_r.keys():
-            if self.d_r[r] == 0:
+        d_r_copy = deepcopy(self.d_r)
+        d_dr_copy = deepcopy(self.d_dr)
+        d_rdr_copy = deepcopy(self.d_rdr)
+        for r in d_r_copy.keys():
+            if d_r_copy[r] == 0:
                 self.delete_relation_entries(r)
-            for domain in self.d_dr[r].keys():
+            for domain in d_dr_copy[r].keys():
                 if domain not in self.entities_types.keys() or not self.entities_types[domain]:
-                    counts_removed += self.d_dr[r][domain]
+                    counts_removed += d_dr_copy[r][domain]
                     self.delete_relation_domain_entries(r, domain)
                 else:
-                    for range in set(self.d_rdr[r][domain].keys()):
+                    for range in set(d_rdr_copy[r][domain].keys()):
                         if range not in self.entities_types.keys() or not self.entities_types[range]:
-                            counts_removed += self.d_rdr[r][domain][range]
+                            counts_removed += d_rdr_copy[r][domain][range]
                             self.delete_relation_domain_range_entries(r, domain, range)
 
-                    if not self.d_rdr[r][domain]:
-                        counts_removed += self.d_dr[r][domain]
+                    if not d_rdr_copy[r][domain]:
+                        counts_removed += d_dr_copy[r][domain]
                         self.delete_relation_domain_entries(r, domain)
 
-            if not self.d_dr[r]:
-                counts_removed += self.d_r[r]
+            if not d_dr_copy[r]:
+                counts_removed += d_r_copy[r]
                 self.delete_relation_entries(r)
 
         if counts_removed > 0:
@@ -268,18 +280,18 @@ class KBModelM3(KBModelM2):
         self.synth_time = create_logger(level, name="synth_time")
         self.query_time = create_logger(level, name="query_logger")
 
-        #self.query_time = logging.getLogger("synth_time")
-        #fh_synth = logging.FileHandler("synth_time.log",mode='w')
-        #fh_synth.setLevel(level)
-        #self.synth_time.addHandler(fh_synth)
-        #self.synth_time.setLevel(level)
+        # self.query_time = logging.getLogger("synth_time")
+        # fh_synth = logging.FileHandler("synth_time.log",mode='w')
+        # fh_synth.setLevel(level)
+        # self.synth_time.addHandler(fh_synth)
+        # self.synth_time.setLevel(level)
 
-        #self.query_time = logging.getLogger("query_logger")
-        #fh_query = logging.FileHandler("query_time.log",mode='w')
-        #fh_query.setLevel(level)
-        #self.query_time.addHandler(fh_query)
-        #self.query_time.info("just to fucking test")
-        #self.query_time.setLevel(level)
+        # self.query_time = logging.getLogger("query_logger")
+        # fh_query = logging.FileHandler("query_time.log",mode='w')
+        # fh_query.setLevel(level)
+        # self.query_time.addHandler(fh_query)
+        # self.query_time.info("just to fucking test")
+        # self.query_time.setLevel(level)
 
         self.pca = pca
 
@@ -343,14 +355,14 @@ class KBModelM3(KBModelM2):
         self.pbar = tqdm.tqdm(total=self.synthetic_facts)
         self.start_t = datetime.datetime.now()
         while self.count_facts < self.synthetic_facts and self.d_r:
-            r_i = choice(self.d_r.keys(), 1, normalize(self.d_r.values()))[0]
+            r_i = choice(list(self.d_r.keys()), 1, normalize(self.d_r.values()))[0]
             s_types = None
             o_types = None
             s_i = o_i = -1
             self.logger.debug("relation %d = %s" % (r_i, self.inv_rel_dict[r_i]))
 
             if r_i in self.d_dr and self.d_dr[r_i]:
-                s_types = choice(self.d_dr[r_i].keys(), 1, normalize(self.d_dr[r_i].values()))[0]
+                s_types = choice(list(self.d_dr[r_i].keys()), 1, normalize(self.d_dr[r_i].values()))[0]
                 subject_entities = set(entities_types[s_types])
                 if r_i in self.func_rel_subj_pool:
                     subject_entities = subject_entities.intersection(self.func_rel_subj_pool[r_i])
@@ -358,7 +370,7 @@ class KBModelM3(KBModelM2):
                 n_entities_subject = len(subject_entities)
                 self.logger.debug("s_types %s with %d entities in pool" % (str(s_types),n_entities_subject))
                 if n_entities_subject > 0 and s_types in self.d_rdr[r_i] and self.d_rdr[r_i][s_types]:
-                    o_types = choice(self.d_rdr[r_i][s_types].keys(), 1, normalize(self.d_rdr[r_i][s_types].values()))[
+                    o_types = choice(list(self.d_rdr[r_i][s_types].keys()), 1, normalize(self.d_rdr[r_i][s_types].values()))[
                         0]
                     object_entities = set(entities_types[o_types])
                     if r_i in self.inv_func_rel_subj_pool:

@@ -13,28 +13,28 @@ class Literal(object):
         self.relation = URIRelation(relation)
         self.rel_dict = None
         if rel_dict is not None:
-            self.rel_dict = {v:k for k,v in rel_dict.items()}
+            self.rel_dict = {v: k for k, v in rel_dict.items()}
 
     def __str__(self):
         if self.rel_dict is None or self.relation.id not in self.rel_dict:
-            return "?"+chr(self.arg1+96)+"  "+str(self.relation.id)+"  ?"+chr(self.arg2+96)
+            return f"?{chr(self.arg1+96)}  {str(self.relation.id)}  ?{chr(self.arg2+96)}"
         else:
-            return "?"+chr(self.arg1+96)+"  "+self.rel_dict[self.relation.id]+"  ?"+chr(self.arg2+96)
+            return f"?{chr(self.arg1+96)}  {self.rel_dict[self.relation.id]}  ?{chr(self.arg2+96)}"
 
     def sparql_patterns(self):
-        return "?"+chr(self.arg1+96)+\
-               " <"+self.relation.__str__()+"> " \
-               "?"+chr(self.arg2+96)+" . "
+        return "?" + chr(self.arg1+96) + \
+               " <" + self.relation.__str__() + "> " \
+               "?" + chr(self.arg2+96) + " . "
 
     @staticmethod
     def parse_amie(literal_string, rel_dict):
         literal_string = literal_string.strip()
         args = literal_string.split(" ")
-        args = filter(None,args)
-        assert len(args)==3
+        args = list(filter(None, args))
+        assert len(args) == 3
         arg1 = args[0]
         arg2 = args[2]
-        assert arg1.startswith("?") and arg2.startswith("?") and len(arg1)==2 and len(arg2)==2
+        assert arg1.startswith("?") and arg2.startswith("?") and len(arg1) == 2 and len(arg2) == 2
 
         if args[1].startswith("<http") or args[1].startswith("http"):
             rel_uri = re.match("<?(.+)>?", args[1]).group(1)
@@ -50,20 +50,20 @@ class Literal(object):
             if rel not in rel_dict:
                 return None
         else:
-            rel_dict = {rel:0}
+            rel_dict = {rel: 0}
 
         rel_id = rel_dict[rel]
         arg1_id = ord(arg1[1]) - 96
         arg2_id = ord(arg2[1]) - 96
 
-        return Literal(rel_id,arg1_id,arg2_id,rel_dict)
+        return Literal(rel_id, arg1_id, arg2_id, rel_dict)
 
 
 # Rules are assumed to have their consequent always with first argument ?a and second ?b
 class Rule(object):
-    def __init__(self, antecedents=[], consequents=[], std_conf=1.0, pca_conf=1.0):
-        self.antecedents = antecedents
-        self.consequents = consequents
+    def __init__(self, antecedents=None, consequents=None, std_conf=1.0, pca_conf=1.0):
+        self.antecedents = antecedents or []
+        self.consequents = consequents or []
         self.std_conf = std_conf
         self.pca_conf = pca_conf
 
@@ -82,7 +82,7 @@ class Rule(object):
             patterns += ant.sparql_patterns() + " . "
         return patterns
 
-    def antecedents_patterns(self, g, s,p,o):
+    def antecedents_patterns(self, g, s, p, o):
         patterns = ""
         arg_s = None
         arg_o = None
@@ -108,8 +108,8 @@ class Rule(object):
 
         return patterns, new_lit
 
-    def produce(self, g, s,p,o):
-        ss, ps, os = [],[],[]
+    def produce(self, g, s, p, o):
+        ss, ps, os = [], [], []
         if len(self.antecedents) == 1:
             r_j = self.consequents[0].relation
             if isinstance(r_j, URIRelation):
@@ -124,10 +124,9 @@ class Rule(object):
             if self.antecedents[0].arg1 == self.consequents[0].arg2 and \
                self.antecedents[0].arg2 == self.consequents[0].arg1:
                 ss.append(o), ps.append(new_p), os.append(s)
-            return zip(ss,ps,os)
+            return zip(ss, ps, os)
         else:
-            patterns, new_lit = self.antecedents_patterns(g,s,p,o)
-
+            patterns, new_lit = self.antecedents_patterns(g, s, p, o)
 
             if "?b" not in patterns and "?a" not in patterns:
                 projection = "ask "
@@ -151,29 +150,27 @@ class Rule(object):
                 new_p = URIRelation(self.consequents[0].relation).uri
 
             if "?a" in projection and "?b" in projection:
-                for a,b in qres:
+                for a, b in qres:
                     new_s = a
                     new_o = b
                     ss.append(new_s), ps.append(new_p), os.append(new_o)
             elif "?a" in projection:
-                new_o = s if new_lit.arg1==2 else o
+                new_o = s if new_lit.arg1 == 2 else o
                 for a in qres:
                     new_s = a[0]
                     ss.append(new_s), ps.append(new_p), os.append(new_o)
             elif "?b" in projection:
-                new_s = s if new_lit.arg1==1 else o
+                new_s = s if new_lit.arg1 == 1 else o
                 for b in qres:
                     new_o = b[0]
                     ss.append(new_s), ps.append(new_p), os.append(new_o)
             else:
                 if bool(qres):
-                    new_s = s if new_lit.arg1==1 else o
-                    new_o = o if new_lit.arg2==2 else s
+                    new_s = s if new_lit.arg1 == 1 else o
+                    new_o = o if new_lit.arg2 == 2 else s
                     ss.append(new_s), ps.append(new_p), os.append(new_o)
 
-            return zip(ss,ps,os)
-
-
+            return zip(ss, ps, os)
 
     @staticmethod
     def parse_amie(line, rel_dict):
@@ -183,33 +180,33 @@ class Rule(object):
         pca_conf = float(cells[3].strip())
         assert "=>" in rule_string
         ant_cons = rule_string.split("=>")
-        ant_cons = filter(None,ant_cons)
+        ant_cons = list(filter(None, ant_cons))
         ant_string = ant_cons[0].strip()
         con_string = ant_cons[1].strip()
 
-        ant_string = re.sub("(\?\w+)\s+\?","\g<1>|?",ant_string)
-        con_string = re.sub("(\?\w+)\s+\?","\g<1>|?",con_string)
+        ant_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", ant_string)
+        con_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", con_string)
 
         antecedents = []
         for ant in ant_string.split("|"):
-            lit = Literal.parse_amie(ant,rel_dict)
+            lit = Literal.parse_amie(ant, rel_dict)
             if lit is None:
                 return None
             antecedents.append(lit)
 
         consequents = []
         for con in con_string.split("|"):
-            lit = Literal.parse_amie(con,rel_dict)
+            lit = Literal.parse_amie(con, rel_dict)
             if lit is None:
                 return None
             consequents.append(lit)
 
-        return Rule(antecedents,consequents,std_conf,pca_conf)
+        return Rule(antecedents, consequents, std_conf, pca_conf)
 
 
 class RuleSet(object):
-    def __init__(self, rules=[]):
-        self.rules = rules
+    def __init__(self, rules=None):
+        self.rules = rules or []
         self.rules_per_relation = {}
         for rule in rules:
             for literal in rule.antecedents:
@@ -217,29 +214,23 @@ class RuleSet(object):
                     self.rules_per_relation[literal.relation.id] = []
                 self.rules_per_relation[literal.relation.id].append(rule)
 
-
-    @staticmethod
-    def parse_amie(rules_path, rel_dict):
-        f = open(rules_path,"rb")
+    @classmethod
+    def parse_amie(cls, rules_path, rel_dict):
         rules = []
-        lines = f.readlines()
-        for i in range(1,len(lines)):
-            line = lines[i]
-            if line.startswith("?"):
-                rule = Rule.parse_amie(line,rel_dict)
-                if rule is not None:
-                    rules.append(rule)
-        print("rules successfully parsed: %d"%len(rules))
-        return RuleSet(rules)
-
-
-
+        with open(rules_path, "r") as file:
+            for line in file:
+                if line.startswith("?"):
+                    rule = Rule.parse_amie(line, rel_dict)
+                    if rule is not None:
+                        rules.append(rule)
+        print(f"Rules successfully parsed: {len(rules)}")
+        return cls(rules)
 
 
 class RuleStats(Rule):
-    def __init__(self, antecedents=[], consequents=[], head_cov=nan, std_conf=nan, pca_conf=nan, pos_expl=nan,
+    def __init__(self, antecedents=None, consequents=None, head_cov=nan, std_conf=nan, pca_conf=nan, pos_expl=nan,
                  std_body_sz=nan, pca_body_sz=nan, func_var=nan, std_low_bd=nan, pca_low_bd=nan, pca_conf_est=nan):
-        super(RuleStats,self).__init__(antecedents,consequents,std_conf,pca_conf)
+        super(RuleStats, self).__init__(antecedents, consequents, std_conf, pca_conf)
         self.head_cov = head_cov
         self.pos_expl = pos_expl
         self.std_body_sz = std_body_sz
@@ -253,68 +244,63 @@ class RuleStats(Rule):
     def parse_amie(line, rel_dict):
         cells = line.split("\t")
         rule_string = cells[0]
-        head_cov    = float(cells[1].strip())
-        std_conf    = float(cells[2].strip())
-        pca_conf    = float(cells[3].strip())
-        pos_expl    = float(cells[4].strip())
+        head_cov = float(cells[1].strip())
+        std_conf = float(cells[2].strip())
+        pca_conf = float(cells[3].strip())
+        pos_expl = float(cells[4].strip())
         std_body_sz = float(cells[5].strip())
         pca_body_sz = float(cells[6].strip())
-        #func_var = float(cells[7].strip())
+        # func_var = float(cells[7].strip())
         func_var = 0.0
-        std_low_bd  = float(cells[8].strip())
-        pca_low_bd  = float(cells[9].strip())
-        pca_conf_est= float(cells[10].strip())
+        std_low_bd = float(cells[8].strip())
+        pca_low_bd = float(cells[9].strip())
+        pca_conf_est = float(cells[10].strip())
         assert "=>" in rule_string
         ant_cons = rule_string.split("=>")
-        ant_cons = filter(None,ant_cons)
+        ant_cons = list(filter(None, ant_cons))
         ant_string = ant_cons[0].strip()
         con_string = ant_cons[1].strip()
 
-        ant_string = re.sub("(\?\w+)\s+\?","\g<1>|?",ant_string)
-        con_string = re.sub("(\?\w+)\s+\?","\g<1>|?",con_string)
+        ant_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", ant_string)
+        con_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", con_string)
 
         antecedents = []
         for ant in ant_string.split("|"):
-            lit = Literal.parse_amie(ant,rel_dict)
+            lit = Literal.parse_amie(ant, rel_dict)
             if lit is None:
                 return None
             antecedents.append(lit)
 
         consequents = []
         for con in con_string.split("|"):
-            lit = Literal.parse_amie(con,rel_dict)
+            lit = Literal.parse_amie(con, rel_dict)
             if lit is None:
                 return None
             consequents.append(lit)
 
-        return RuleStats(antecedents,consequents,head_cov,std_conf,pca_conf,pos_expl,
-                         std_body_sz,pca_body_sz,func_var,std_low_bd,pca_low_bd,pca_conf_est)
+        return RuleStats(antecedents, consequents, head_cov, std_conf, pca_conf, pos_expl,
+                         std_body_sz, pca_body_sz, func_var, std_low_bd, pca_low_bd, pca_conf_est)
+
 
 class RuleSetStats(RuleSet):
-    def __init__(self, rules=[]):
-        super(RuleSetStats,self).__init__(rules)
+    def __init__(self, rules=None):
+        super(RuleSetStats, self).__init__(rules)
 
-
-    def avg(self,attname):
+    def avg(self, attname):
         values = []
         for rule in self.rules:
             values.append(rule.__getattribute__(attname))
         return mean(values), std(values)
 
-
-    @staticmethod
-    def parse_amie(rules_path, rel_dict):
-        f = open(rules_path,"rb")
-        rules = []
-        lines = f.readlines()
-        for i in range(1,len(lines)):
-            line = lines[i]
-            if line.startswith("?"):
-                rule = RuleStats.parse_amie(line,rel_dict)
-                if rule is not None:
-                    rules.append(rule)
-        return RuleSetStats(rules)
-
-
-
-
+    # @staticmethod
+    # def parse_amie(rules_path, rel_dict):
+    #     f = open(rules_path,"rb")
+    #     rules = []
+    #     lines = f.readlines()
+    #     for i in range(1,len(lines)):
+    #         line = lines[i]
+    #         if line.startswith("?"):
+    #             rule = RuleStats.parse_amie(line,rel_dict)
+    #             if rule is not None:
+    #                 rules.append(rule)
+    #     return RuleSetStats(rules)
