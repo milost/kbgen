@@ -36,9 +36,9 @@ def dump_tsv(graph: Graph, output_file: str) -> None:
 
 def normalize(l: List[float]) -> Iterable[float]:
     """
-    TODO
-    :param l: list of float values
-    :return: normalized TODO
+    Normalizes the input float vector by its sum.
+    :param l: list of float values TODO: what do they represent
+    :return: normalized TODO what are these values
     """
     l_array = np.array(list(l)).astype(float)
     l_array /= sum(l_array)
