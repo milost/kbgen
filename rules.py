@@ -1,6 +1,6 @@
 import re
 from rdflib import URIRef
-from util import URIRelation
+from util_models import URIRelation
 from numpy import std, mean
 
 nan = float("nan")

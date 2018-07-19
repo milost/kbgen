@@ -3,13 +3,13 @@ from typing import Dict
 import numpy as np
 from rdflib import OWL, RDFS, Graph
 
-from tensor_models import DAGNode, TreeNode
+from tensor_models import DAGNode
 
 
 def to_triples(X, order="pso"):
     h, t, r = [], [], []
     for i in range(len(X)):
-        r.extend(np.full((X[i].nnz), i))
+        r.extend(np.full(X[i].nnz, i))
         h.extend(X[i].row.tolist())
         t.extend(X[i].col.tolist())
     if order == "spo":
@@ -21,18 +21,18 @@ def to_triples(X, order="pso"):
     return np.array(triples)
 
 
-def load_domains(inputDir):
-    dataset = np.load(inputDir)
+def load_domains(input_dir):
+    dataset = np.load(input_dir)
     return dataset["domains"].item() if "domains" in dataset else None
 
 
-def load_ranges(inputDir):
-    dataset = np.load(inputDir)
+def load_ranges(input_dir):
+    dataset = np.load(input_dir)
     return dataset["ranges"].item() if "ranges" in dataset else None
 
 
-def load_type_hierarchy(inputDir):
-    dataset = np.load(inputDir)
+def load_type_hierarchy(input_dir):
+    dataset = np.load(input_dir)
     hierarchy = dataset["type_hierarchy"].item() if "type_hierarchy" in dataset else None
     for i, n in hierarchy.items():
         try:
@@ -43,8 +43,8 @@ def load_type_hierarchy(inputDir):
     return hierarchy
 
 
-def load_prop_hierarchy(inputDir):
-    dataset = np.load(inputDir)
+def load_prop_hierarchy(input_dir):
+    dataset = np.load(input_dir)
     hierarchy = dataset["prop_hierarchy"].item() if "prop_hierarchy" in dataset else None
     for i, n in hierarchy.items():
         try:
@@ -55,30 +55,38 @@ def load_prop_hierarchy(inputDir):
     return hierarchy
 
 
-def load_entities_dict(inputDir):
-    dataset = np.load(inputDir)
+def load_entities_dict(input_dir):
+    dataset = np.load(input_dir)
     return dataset["entities_dict"].item() if "entities_dict" in dataset else None
 
 
-def load_types_dict(inputDir):
-    dataset = np.load(inputDir)
+def load_types_dict(input_dir):
+    dataset = np.load(input_dir)
     return dataset["types_dict"].item() if "types_dict" in dataset else None
 
 
-def load_relations_dict(inputDir):
-    dataset = np.load(inputDir)
+def load_relations_dict(input_dir):
+    dataset = np.load(input_dir)
     return dataset["relations_dict"].item() if "relations_dict" in dataset else None
 
 
-def loadGraphNpz(inputDir):
-    dataset = np.load(inputDir)
+def loadGraphNpz(input_dir):
+    dataset = np.load(input_dir)
     data = dataset["data"]
     return data.tolist()
 
 
-def loadTypesNpz(inputDir):
-    dataset = np.load(inputDir)
+def loadTypesNpz(input_dir):
+    dataset = np.load(input_dir)
     return dataset["types"].item()
+
+
+def load_relations_dict(input_path):
+    dataset = np.load(input_path)
+    dict_rel = dataset["relations_dict"]
+    if not isinstance(dict_rel, dict):
+        dict_rel = dict_rel.item()
+    return dict_rel
 
 
 def get_prop_dag(graph: Graph, property_to_id: Dict[str, int]) -> Dict[int, DAGNode]:
@@ -207,29 +215,6 @@ def get_ranges(graph: Graph, property_to_id: Dict[str, int], entity_type_to_id: 
     return ranges
 
 
-def load_relations_dict(input_path):
-    dataset = np.load(input_path)
-    dict_rel = dataset["relations_dict"]
-    if not isinstance(dict_rel, dict):
-        dict_rel = dict_rel.item()
-    return dict_rel
-
-
-def get_roots(hier):
-    if not hier:
-        return []
-    else:
-        roots = []
-        for i, n in hier.items():
-            if isinstance(n, DAGNode):
-                if not n.parents:
-                    roots.append(n)
-            if isinstance(n, TreeNode):
-                if n.parent is None:
-                    roots.append(n)
-        return roots
-
-
 ################################################################################
 # unused methods
 ################################################################################
@@ -253,7 +238,7 @@ def get_roots(hier):
 #
 #     return prop_tree
 #
-
+#
 # def load_type_dict(input_path):
 #     dataset = np.load(input_path)
 #     dict_type = dataset["types_dict"]
@@ -308,3 +293,18 @@ def get_roots(hier):
 #             if c.parent != n:
 #                 n.children.remove(c)
 #     return tree
+#
+#
+# def get_roots(hier):
+#     if not hier:
+#         return []
+#     else:
+#         roots = []
+#         for i, n in hier.items():
+#             if isinstance(n, DAGNode):
+#                 if not n.parents:
+#                     roots.append(n)
+#             if isinstance(n, TreeNode):
+#                 if n.parent is None:
+#                     roots.append(n)
+#         return roots

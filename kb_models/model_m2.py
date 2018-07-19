@@ -2,7 +2,8 @@ from load_tensor_tools import loadGraphNpz
 from kb_models.model_m1 import KBModelM1
 from rdflib import Graph
 from numpy.random import choice
-from util import URIEntity, URIRelation, normalize, create_logger
+from util_models import URIEntity, URIRelation
+from util import normalize, create_logger
 import logging
 from scipy.sparse import csr_matrix
 import tqdm

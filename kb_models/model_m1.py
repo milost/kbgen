@@ -3,7 +3,8 @@ from load_tensor_tools import loadGraphNpz, loadTypesNpz, load_types_dict, load_
 from kb_models.model import KBModel
 from rdflib import Graph, RDF, OWL, RDFS
 from numpy.random import choice, randint
-from util import URIEntity, URIRelation, URIType, MultiType, normalize, create_logger
+from util_models import URIEntity, URIRelation, URIType, MultiType
+from util import normalize, create_logger
 import logging
 from scipy.sparse import csr_matrix
 import tqdm

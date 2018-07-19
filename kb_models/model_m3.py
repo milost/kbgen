@@ -10,7 +10,8 @@ from numpy.random import choice
 from rdflib import Graph
 import datetime
 
-from util import URIEntity, URIRelation, normalize, create_logger
+from util_models import URIEntity, URIRelation
+from util import normalize, create_logger
 
 
 class KBModelM3(KBModelM2):
