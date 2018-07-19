@@ -356,14 +356,14 @@ class KBModelM3(KBModelM2):
         self.pbar = tqdm.tqdm(total=self.synthetic_facts)
         self.start_t = datetime.datetime.now()
         while self.count_facts < self.synthetic_facts and self.d_r:
-            r_i = choice(list(self.d_r.keys()), 1, normalize(self.d_r.values()))[0]
+            r_i = choice(list(self.d_r.keys()), 1, normalize(list(self.d_r.values())))[0]
             s_types = None
             o_types = None
             s_i = o_i = -1
             self.logger.debug("relation %d = %s" % (r_i, self.inv_rel_dict[r_i]))
 
             if r_i in self.d_dr and self.d_dr[r_i]:
-                s_types = choice(list(self.d_dr[r_i].keys()), 1, normalize(self.d_dr[r_i].values()))[0]
+                s_types = choice(list(self.d_dr[r_i].keys()), 1, normalize(list(self.d_dr[r_i].values())))[0]
                 subject_entities = set(entities_types[s_types])
                 if r_i in self.func_rel_subj_pool:
                     subject_entities = subject_entities.intersection(self.func_rel_subj_pool[r_i])
@@ -371,7 +371,7 @@ class KBModelM3(KBModelM2):
                 n_entities_subject = len(subject_entities)
                 self.logger.debug("s_types %s with %d entities in pool" % (str(s_types),n_entities_subject))
                 if n_entities_subject > 0 and s_types in self.d_rdr[r_i] and self.d_rdr[r_i][s_types]:
-                    o_types = choice(list(self.d_rdr[r_i][s_types].keys()), 1, normalize(self.d_rdr[r_i][s_types].values()))[
+                    o_types = choice(list(self.d_rdr[r_i][s_types].keys()), 1, normalize(list(self.d_rdr[r_i][s_types].values())))[
                         0]
                     object_entities = set(entities_types[o_types])
                     if r_i in self.inv_func_rel_subj_pool:

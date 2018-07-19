@@ -110,18 +110,18 @@ class KBModelM2(KBModelM1):
         self.entities_types = entities_types
 
         self.logger.info("synthesizing facts")
-        dist_relations = normalize(adjusted_dist_relations.values())
+        dist_relations = normalize(list(adjusted_dist_relations.values()))
 
         dist_domains_relation = {}
         for rel in relations:
-            dist_domains_relation[rel] = normalize(self.dist_domains_relation[rel].values())
+            dist_domains_relation[rel] = normalize(list(self.dist_domains_relation[rel].values()))
 
         dist_ranges_domain_relation = {}
         for rel in relations:
             dist_ranges_domain_relation[rel] = {}
             for domain_i in self.dist_ranges_domain_relation[rel].keys():
                 dist_ranges_domain_relation[rel][domain_i] = normalize(
-                    self.dist_ranges_domain_relation[rel][domain_i].values())
+                    list(self.dist_ranges_domain_relation[rel][domain_i].values()))
 
         self.count_facts = 0
         self.count_already_existent_facts = 0

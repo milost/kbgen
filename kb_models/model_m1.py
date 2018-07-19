@@ -149,7 +149,7 @@ class KBModelM1(KBModel):
         entity_types_dict = {}
         for i in self.dist_types.keys():
             entity_types_dict[i] = []
-        entity_types = choice(list(self.dist_types.keys()), n_entities, True, normalize(self.dist_types.values()))
+        entity_types = choice(list(self.dist_types.keys()), n_entities, True, normalize(list(self.dist_types.values())))
         type_assertions = 0
         pbar = tqdm.tqdm(total=n_entities)
         for i in range(n_entities):
@@ -191,7 +191,7 @@ class KBModelM1(KBModel):
         g = Graph()
 
         quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(self.dist_relations,quadratic_relations)
+        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(self.dist_relations, quadratic_relations)
 
         types = range(self.n_types)
         relations = range(self.n_relations)
@@ -204,18 +204,18 @@ class KBModelM1(KBModel):
         self.entities_types = entities_types
 
         self.logger.info("synthesizing facts")
-        dist_relations = normalize(adjusted_dist_relations)
+        dist_relations = normalize(list(adjusted_dist_relations))
 
         dist_domains_relation = {}
         for rel in relations:
-            dist_domains_relation[rel] = normalize(self.dist_domains_relation[rel].values())
+            dist_domains_relation[rel] = normalize(list(self.dist_domains_relation[rel].values()))
 
         dist_ranges_domain_relation = {}
         for rel in relations:
             dist_ranges_domain_relation[rel] = {}
             for domain_i in self.dist_ranges_domain_relation[rel].keys():
                 dist_ranges_domain_relation[rel][domain_i] = normalize(
-                    self.dist_ranges_domain_relation[rel][domain_i].values())
+                    list(self.dist_ranges_domain_relation[rel][domain_i].values()))
 
         self.count_facts = 0
         self.count_already_existent_facts = 0
