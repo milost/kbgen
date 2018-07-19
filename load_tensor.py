@@ -16,19 +16,30 @@ def cli_args() -> Namespace:
     return parser.parse_args()
 
 
-def load_graph(input_data: str) -> Tuple[Graph, str]:
-    rdf_format = input_data[input_data.rindex(".") + 1:]
+def load_graph(input_file_path: str) -> Tuple[Graph, str]:
+    """
+    Loads the RDF graph from a tensor file into a Knowledge Graph.
+    :param input_file_path: path to the .n3 file of the RDF data
+    :return: tuple of the created graph object and the format of the rdf file
+    """
+    rdf_format = input_file_path[input_file_path.rindex(".") + 1:]
 
     print("Loading data...")
     # g is a graph of the loaded RDF data
     graph = Graph()
-    graph.parse(input_data, format=rdf_format)
+    graph.parse(input_file_path, format=rdf_format)
     return graph, rdf_format
 
 
 def extract_entity_types(graph: Graph) -> Dict[str, int]:
+    """
+    Extracts the "type of" and "class of" relations from the Knowledge Graph and creates a dictionary of the entity
+    types and their unique identifiers.
+    :param graph: the graph object of the Knowledge Graph
+    :return: a dictionary of entity types pointing to their id
+    """
     # dictionary of entity types/classes
-    # contains tuples of (type, type_id)
+    # contains tuples of (entity_type, entity_type_id)
     entity_type_to_id = {}
 
     print("Loading entity types..")
@@ -63,6 +74,13 @@ def extract_entity_types(graph: Graph) -> Dict[str, int]:
 
 
 def extract_entities(graph: Graph, entity_type_to_id: Dict[str, int]) -> Dict[str, int]:
+    """
+    Extracts the entities from the Knowledge Graph and creates a dictionary of the entities and their unique
+    identifiers.
+    :param graph: the graph object of the Knowledge Graph
+    :param entity_type_to_id: the dictionary of the entity types and their unique identifies
+    :return: a dictionary of entity types pointing to their id
+    """
     # dictionary of all subjects that are not types (entities)
     # contains tuples of (entity, entity_id)
     entity_to_id = {}
@@ -79,6 +97,13 @@ def extract_entities(graph: Graph, entity_type_to_id: Dict[str, int]) -> Dict[st
 
 
 def extract_properties(graph: Graph, entity_to_id: Dict[str, int]) -> Dict[str, int]:
+    """
+    Extracts the object properties/entity properties from the Knowledge graph and creates a dictionary of the properties
+    and their unique identifiers.
+    :param graph: the graph object of the Knowledge Graph
+    :param entity_to_id: the dictionary of the entities and their unique identifies
+    :return: a dictionary of object properties/entity properties pointing to their id
+    """
     # dictionary of object properties
     # contains tuples of (property, property_id)
     property_to_id = {}
@@ -108,6 +133,14 @@ def extract_properties(graph: Graph, entity_to_id: Dict[str, int]) -> Dict[str, 
 def create_property_adjacency_matrices(graph: Graph,
                                        entity_to_id: Dict[str, int],
                                        property_to_id: Dict[str, int]) -> List[coo_matrix]:
+    """
+    Creates an adjacency matrix for every object property.
+    :param graph: the graph object of the Knowledge Graph
+    :param entity_to_id: the dictionary of the entities and their unique identifies
+    :param property_to_id: the dictionary of the object properties and their unique identifies
+    :return: a list of adjacency matrices, where the adjacency matrix at list index i belongs to the object property
+    with the unique identifier i
+    """
     print("Allocating adjacency matrices...")
     data_coo = [{"rows": [], "cols": [], "vals": []}] * len(property_to_id)
 
@@ -134,6 +167,13 @@ def create_property_adjacency_matrices(graph: Graph,
 def create_entity_type_adjacency_matrix(graph: Graph,
                                         entity_to_id: Dict[str, int],
                                         entity_type_to_id: Dict[str, int]) -> coo_matrix:
+    """
+    Creates an adjacency matrix for the "type of" relation, i.e., it contains all the type information of the graph.
+    :param graph: the graph object of the Knowledge Graph
+    :param entity_to_id: the dictionary of the entities and their unique identifies
+    :param entity_type_to_id:  the dictionary of the entity types and their unique identifies
+    :return: an adjacency matrix for the "type of" relation
+    """
     # create matrix for object types/classes
     type_coo = {"rows": [], "cols": [], "vals": []}
     print("Populating type matrix with type assertions...")
@@ -163,48 +203,59 @@ def main():
     args = cli_args()
     print(args)
 
+    # load the graph and extract entities, entity types and object properties
     graph, rdf_format = load_graph(args.input)
     entity_type_to_id = extract_entity_types(graph)
     entity_to_id = extract_entities(graph, entity_type_to_id)
     property_to_id = extract_properties(graph, entity_to_id)
 
+    # build adjacency matrices for all relations (object properties and type relations) in the graph
     property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-
     entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
 
-    # TODO: doc...
+    # DAG of the entity type/class hierarchy
     type_hierarchy = get_type_dag(graph, entity_type_to_id)
+    # DAG of the object property hierarchy
     prop_hierarchy = get_prop_dag(graph, property_to_id)
 
-    # change from objects to indices to avoid "maximum recursion depth exceeded" when pickling
-    for i, n in type_hierarchy.items():
-        n.children = [c.node_id for c in n.children]
-        n.parents = [p.node_id for p in n.parents]
-    for i, n in prop_hierarchy.items():
-        n.children = [c.node_id for c in n.children]
-        n.parents = [p.node_id for p in n.parents]
+    # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling the
+    # graph
+    for entity_type_id, entity_type_dag_node in type_hierarchy.items():
+        entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
+        entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
 
-    type_total = len(entity_type_to_id) if entity_type_to_id else 0
-    type_matched = len(type_hierarchy) if type_hierarchy else 0
-    prop_total = len(entity_type_to_id) if entity_type_to_id else 0
-    prop_matched = len(prop_hierarchy) if prop_hierarchy else 0
+    # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
+    # graph
+    for property_id, property_dag_node in prop_hierarchy.items():
+        property_dag_node.children = [child.node_id for child in property_dag_node.children]
+        property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
 
-    print("load types hierarchy: total=%d matched=%d" % (type_total, type_matched))
-    print("load relations hierarchy: total=%d matched=%d" % (prop_total, prop_matched))
+    num_entity_types = len(entity_type_to_id or {})
+    num_entity_types_in_hierarchy = len(type_hierarchy or {})
+    num_object_properties = len(entity_type_to_id or {})
+    num_object_properties_in_hierarchy = len(prop_hierarchy or {})
 
+    print(f"Loaded {num_entity_types} entity types, of which {num_entity_types_in_hierarchy} are contained in the "
+          f"hierarchy graph...")
+    print(f"Loaded {num_object_properties} object properties, of which {num_object_properties_in_hierarchy} are "
+          f"contained in the hierarchy graph...")
+
+    # explanation of domains and ranges: https://stackoverflow.com/a/9066520
     domains = get_domains(graph, property_to_id, entity_type_to_id)
-    print("load relation domains: total=%d" % (len(domains)))
+    print(f"Loaded {len(domains)} relation domains...")
 
     ranges = get_ranges(graph, property_to_id, entity_type_to_id)
-    print("load relation ranges: total=%d" % (len(ranges)))
+    print(f"Loaded {len(ranges)} relation ranges...")
 
+    # TODO: don't know what this is for
     rdfs = {"type_hierarchy": type_hierarchy,
             "prop_hierarchy": prop_hierarchy,
             "domains": domains,
             "ranges": ranges}
 
+    # serialize graph as .npz file
     np.savez(args.input.replace("." + rdf_format, ".npz"),
-             data=property_adjaceny_matrices,
+             data=property_adjaceny_matrices,  # WARNING: this could be a problem with a huge dataset (e.g., DBpedia)
              types=entity_type_adjacency_matrix,
              entities_dict=entity_to_id,
              relations_dict=property_to_id,
