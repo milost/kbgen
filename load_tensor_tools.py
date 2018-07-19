@@ -1,6 +1,9 @@
+from typing import Dict
+
 import numpy as np
-from rdflib import OWL, RDFS
-from multiprocessing import Queue
+from rdflib import OWL, RDFS, Graph
+
+from tensor_models import DAGNode, TreeNode
 
 
 def to_triples(X, order="pso"):
@@ -78,133 +81,130 @@ def loadTypesNpz(inputDir):
     return dataset["types"].item()
 
 
-def get_prop_dag(g, dict_rel):
-    prop_dag = {}
-    for s, p, o in g.triples((None, RDFS.subPropertyOf, None)):
-        if (s in dict_rel) and (o in dict_rel):
+def get_prop_dag(graph: Graph, property_to_id: Dict[str, int]) -> Dict[int, DAGNode]:
+    """
+    Creates a DAG of the object property hierarchy in the graph. This hierarchy is defined by the RDFS
+    "sub-property of" property.
+    :param graph: the graph object of the Knowledge Graph
+    :param property_to_id: the dictionary of the object properties and their unique identifies
+    :return: dictionary of object property ids and the corresponding nodes in the DAG
+    """
+    # dictionary pointing from object property id to the corresponding node in the entity type DAG
+    property_dag = {}
 
-            s_id = dict_rel[s]
-            o_id = dict_rel[o]
-            if s_id != o_id:
-                if o_id not in prop_dag:
-                    prop_dag[o_id] = DAGNode(o_id, o, parents=[], children=[])
-                if s_id not in prop_dag:
-                    prop_dag[s_id] = DAGNode(s_id, s, parents=[], children=[])
+    # iterate over property hierarchy
+    for subject, predicate, object in graph.triples((None, RDFS.subPropertyOf, None)):
+        # if both subject and object are properties
+        if (subject in property_to_id) and (object in property_to_id):
+            subject_id = property_to_id[subject]
+            object_id = property_to_id[object]
+            # add subject and object to the DAG if subject and object are different properties
+            if subject_id != object_id:
+                if object_id not in property_dag:
+                    property_dag[object_id] = DAGNode(object_id, object, parents=[], children=[])
+                if subject_id not in property_dag:
+                    property_dag[subject_id] = DAGNode(subject_id, subject, parents=[], children=[])
 
-                prop_dag[s_id].parents.append(prop_dag[o_id])
-                prop_dag[o_id].children.append(prop_dag[s_id])
+                # add DAG node of object as parent to the subject DAG node
+                property_dag[subject_id].parents.append(property_dag[object_id])
+                # add DAG node of the subject as child to the object DAG node
+                property_dag[object_id].children.append(property_dag[subject_id])
 
-    return prop_dag
-
-
-def get_prop_tree(g, dict_rel):
-    prop_tree = {}
-    for s, p, o in g.triples((None, RDFS.subPropertyOf, None)):
-        if (s in dict_rel) and (o in dict_rel):
-            s_id = dict_rel[s]
-            o_id = dict_rel[o]
-            if s_id != o_id:
-                if o_id not in prop_tree:
-                    prop_tree[o_id] = TreeNode(o_id, o, children=[])
-                if s_id not in prop_tree:
-                    prop_tree[s_id] = TreeNode(s_id, s, prop_tree[o_id], children=[])
-
-                if prop_tree[s_id].parent is None:
-                    prop_tree[s_id].parent = prop_tree[o_id]
-                if prop_tree[s_id].parent == prop_tree[o_id]:
-                    prop_tree[o_id].children.append(prop_tree[s_id])
-
-    return prop_tree
+    return property_dag
 
 
-def get_type_dag(g, dict_type):
-    type_dag = {}
+def get_type_dag(graph: Graph, entity_type_to_id: Dict[str, int]) -> Dict[int, DAGNode]:
+    """
+    Creates a DAG of the entity type hierarchy in the graph. This hierarchy is defined by the RDFS "subclass of"
+    property.
+    :param graph: the graph object of the Knowledge Graph
+    :param entity_type_to_id: the dictionary of the entity types and their unique identifies
+    :return: dictionary of entity type ids and the corresponding nodes in the DAG
+    """
+    # dictionary pointing from entity type id to the corresponding node in the entity type DAG
+    entity_type_dag = {}
 
-    # getting equivalent classes
-    equi_classes = {}
-    for s, p, o in g.triples((None, OWL.equivalentClass, None)):
-        equi_classes[s] = o
-        equi_classes[o] = s
+    # extract equivalence class relation
+    equivalent_classes = {}
+    for subject, predicate, object in graph.triples((None, OWL.equivalentClass, None)):
+        equivalent_classes[subject] = object
+        equivalent_classes[object] = subject
 
-    for s, p, o in g.triples((None, RDFS.subClassOf, None)):
-        if (s in dict_type or (s in equi_classes and equi_classes[s] in dict_type)) and \
-                (o in dict_type or (o in equi_classes and equi_classes[o] in dict_type)):
+    # iterate over class hierarchy
+    for subject, predicate, object in graph.triples((None, RDFS.subClassOf, None)):
 
-            if s not in dict_type:
-                s = equi_classes[s]
-            if o not in dict_type:
-                o = equi_classes[o]
+        # is the subject is an entity type or equivalent to an entity type
+        subject_is_entity_type = (subject in entity_type_to_id or
+                                  (subject in equivalent_classes and equivalent_classes[subject] in entity_type_to_id))
+        # is the object is an entity type or equivalent to an entity type
+        object_is_entity_type = (object in entity_type_to_id or
+                                 (object in equivalent_classes and equivalent_classes[object] in entity_type_to_id))
 
-            s_id = dict_type[s]
-            o_id = dict_type[o]
-            if s_id != o_id:
-                if o_id not in type_dag:
-                    type_dag[o_id] = DAGNode(o_id, o, parents=[], children=[])
-                if s_id not in type_dag:
-                    type_dag[s_id] = DAGNode(s_id, s, parents=[], children=[])
+        # if the subject is an entity type or equivalent to an entity type AND the object is an entity type or
+        # equivalent to an entity type
+        if subject_is_entity_type and object_is_entity_type:
+            # replace subject and object with their equivalent entity type if thhey are not an entity type themselves
+            if subject not in entity_type_to_id:
+                subject = equivalent_classes[subject]
+            if object not in entity_type_to_id:
+                object = equivalent_classes[object]
 
-                type_dag[s_id].parents.append(type_dag[o_id])
-                type_dag[o_id].children.append(type_dag[s_id])
+            subject_id = entity_type_to_id[subject]
+            object_id = entity_type_to_id[object]
+            # add subject and object and their relation to the DAG
+            if subject_id != object_id:
+                if object_id not in entity_type_dag:
+                    entity_type_dag[object_id] = DAGNode(object_id, object)
+                if subject_id not in entity_type_dag:
+                    entity_type_dag[subject_id] = DAGNode(subject_id, subject)
 
-    return type_dag
+                # add DAG node of object as parent to the subject DAG node
+                entity_type_dag[subject_id].parents.append(entity_type_dag[object_id])
+                # add DAG node of the subject as child to the object DAG node
+                entity_type_dag[object_id].children.append(entity_type_dag[subject_id])
 
-
-def get_type_tree(g, dict_type):
-    type_tree = {}
-
-    # getting equivalent classes
-    equi_classes = {}
-    for s, p, o in g.triples((None, OWL.equivalentClass, None)):
-        equi_classes[s] = o
-        equi_classes[o] = s
-
-    for s, p, o in g.triples((None, RDFS.subClassOf, None)):
-        if (s in dict_type or (s in equi_classes and equi_classes[s] in dict_type)) and \
-                (o in dict_type or (o in equi_classes and equi_classes[o] in dict_type)):
-
-            if s not in dict_type:
-                s = equi_classes[s]
-            if o not in dict_type:
-                o = equi_classes[o]
-
-            s_id = dict_type[s]
-            o_id = dict_type[o]
-            if s_id != o_id:
-                if o_id not in type_tree:
-                    type_tree[o_id] = TreeNode(o_id, o, children=[])
-                if s_id not in type_tree:
-                    type_tree[s_id] = TreeNode(s_id, s, type_tree[o_id], children=[])
-
-                if type_tree[s_id].parent is None:
-                    type_tree[s_id].parent = type_tree[o_id]
-                if type_tree[s_id].parent == type_tree[o_id]:
-                    type_tree[o_id].children.append(type_tree[s_id])
-
-    return type_tree
+    return entity_type_dag
 
 
-def get_domains(g, dict_rel, dict_type):
+def get_domains(graph: Graph, property_to_id: Dict[str, int], entity_type_to_id: Dict[str, int]) -> Dict[int, int]:
+    """
+    Extracts the domains from the Knowledge Graph. These are defined by the RDFS "domain" relation. These relations are
+    defined between an object property (subject) and an entity type (object) and express that the object property
+    describes entities with that entity type. (for further reading: https://stackoverflow.com/a/9066520)
+    :param graph: the graph object of the Knowledge Graph
+    :param property_to_id: the dictionary of the object properties and their unique identifies
+    :param entity_type_to_id: the dictionary of the entity types and their unique identifies
+    :return: a dictionary pointing from property ids to the entity type id of that properties' domain
+    """
+    # dictionary pointing from object property id to an entity type id
     domains = {}
-    for s, p, o in g.triples((None, RDFS.domain, None)):
-        if s in dict_rel and o in dict_type:
-            domains[dict_rel[s]] = dict_type[o]
+
+    # add all domain triples for which the subject is an object property and the object is an entity type
+    for subject, predicate, object in graph.triples((None, RDFS.domain, None)):
+        if subject in property_to_id and object in entity_type_to_id:
+            domains[property_to_id[subject]] = entity_type_to_id[object]
+
     return domains
 
 
-def get_ranges(g, dict_rel, dict_type):
+def get_ranges(graph: Graph, property_to_id: Dict[str, int], entity_type_to_id: Dict[str, int]) -> Dict[int, int]:
+    """
+    Extracts the ranges from the Knowledge Graph. These are defined by the RDFS "range" relation. These relations
+    are defined between an object property (subject) and an entity type (object) and express that the value of the
+    object property is of the entity type. (for further reading: https://stackoverflow.com/a/9066520)
+    :param graph: the graph object of the Knowledge Graph
+    :param property_to_id: the dictionary of the object properties and their unique identifies
+    :param entity_type_to_id: the dictionary of the entity types and their unique identifies
+    :return: a dictionary pointing from property ids to the entity type id of that properties' range
+    """
+    # dictionary pointing from object property id to an entity type id
     ranges = {}
-    for s, p, o in g.triples((None, RDFS.range, None)):
-        if s in dict_rel and o in dict_type:
-            ranges[dict_rel[s]] = dict_type[o]
+
+    # add all range triples for which the subject is an object property and the object is an entity type
+    for subject, predicate, object in graph.triples((None, RDFS.range, None)):
+        if subject in property_to_id and object in entity_type_to_id:
+            ranges[property_to_id[subject]] = entity_type_to_id[object]
     return ranges
-
-
-def load_type_dict(input_path):
-    dataset = np.load(input_path)
-    dict_type = dataset["types_dict"]
-    if not isinstance(dict_type, dict):
-        dict_type = dict_type.item()
-    return dict_type
 
 
 def load_relations_dict(input_path):
@@ -213,72 +213,6 @@ def load_relations_dict(input_path):
     if not isinstance(dict_rel, dict):
         dict_rel = dict_rel.item()
     return dict_rel
-
-
-class TreeNode(object):
-    def __init__(self, node_id, name, parent=None, children=[]):
-        self.node_id = node_id
-        self.name = name
-        self.parent = parent
-        self.children = children
-
-    def __str__(self):
-        return self.name.__str__()
-
-    def print_tree(self, tab="", pool=None):
-        print(tab + self.name)
-        for child in self.children:
-            if self != child and self == child.parent:
-                child.print_tree(tab + "\t")
-
-    def get_all_parents(self):
-        parents = []
-        nd = self
-        while nd.parent is not None:
-            parents.append(nd.parent)
-            nd = nd.parent
-        return parents
-
-    def get_all_parent_ids(self):
-        return [p.id for p in self.get_all_parents()]
-
-
-class DAGNode(object):
-    def __init__(self, node_id, name, parents=[], children=[]):
-        self.node_id = node_id
-        self.name = name
-        self.parents = parents
-        self.children = children
-
-    def __str__(self):
-        return self.name.__str__()
-
-    def print_tree(self, tab="", pool=None):
-        print(tab + self.name)
-        for child in self.children:
-            if self != child and self in child.parents:
-                child.print_tree(tab + "\t")
-
-    def get_all_parents(self):
-        parents = set()
-        queue = Queue()
-        queue.put(self)
-        while not queue.empty():
-            nd = queue.get()
-            for p in nd.parents:
-                if p not in parents:
-                    parents.add(p)
-                    queue.put(p)
-        return parents
-
-    def get_all_parent_ids(self):
-        return [p.node_id for p in self.get_all_parents()]
-
-    def to_tree(self):
-        tree_node = TreeNode(self.node_id, self.name)
-        tree_node.children = [c.to_tree for c in self.children]
-        tree_node.parent = min(self.parents)
-        return tree_node
 
 
 def get_roots(hier):
@@ -296,15 +230,81 @@ def get_roots(hier):
         return roots
 
 
-def dag_to_tree(dag):
-    tree = {}
-    for i, n in dag.items():
-        tree[i] = TreeNode(n.node_id, n.name)
-    for i, n in dag.items():
-        tree[i].children = [tree[c.node_id] for c in n.children]
-        tree[i].parent = None if not n.parents else tree[min(n.parents).node_id]
-    for i, n in tree.items():
-        for c in n.children:
-            if c.parent != n:
-                n.children.remove(c)
-    return tree
+################################################################################
+# unused methods
+################################################################################
+#
+# def get_prop_tree(g, dict_rel):
+#     prop_tree = {}
+#     for s, p, o in g.triples((None, RDFS.subPropertyOf, None)):
+#         if (s in dict_rel) and (o in dict_rel):
+#             s_id = dict_rel[s]
+#             o_id = dict_rel[o]
+#             if s_id != o_id:
+#                 if o_id not in prop_tree:
+#                     prop_tree[o_id] = TreeNode(o_id, o, children=[])
+#                 if s_id not in prop_tree:
+#                     prop_tree[s_id] = TreeNode(s_id, s, prop_tree[o_id], children=[])
+#
+#                 if prop_tree[s_id].parent is None:
+#                     prop_tree[s_id].parent = prop_tree[o_id]
+#                 if prop_tree[s_id].parent == prop_tree[o_id]:
+#                     prop_tree[o_id].children.append(prop_tree[s_id])
+#
+#     return prop_tree
+#
+
+# def load_type_dict(input_path):
+#     dataset = np.load(input_path)
+#     dict_type = dataset["types_dict"]
+#     if not isinstance(dict_type, dict):
+#         dict_type = dict_type.item()
+#     return dict_type
+#
+#
+# def get_type_tree(g, dict_type):
+#     type_tree = {}
+#
+#     # getting equivalent classes
+#     equi_classes = {}
+#     for s, p, o in g.triples((None, OWL.equivalentClass, None)):
+#         equi_classes[s] = o
+#         equi_classes[o] = s
+#
+#     for s, p, o in g.triples((None, RDFS.subClassOf, None)):
+#         if (s in dict_type or (s in equi_classes and equi_classes[s] in dict_type)) and \
+#                 (o in dict_type or (o in equi_classes and equi_classes[o] in dict_type)):
+#
+#             if s not in dict_type:
+#                 s = equi_classes[s]
+#             if o not in dict_type:
+#                 o = equi_classes[o]
+#
+#             s_id = dict_type[s]
+#             o_id = dict_type[o]
+#             if s_id != o_id:
+#                 if o_id not in type_tree:
+#                     type_tree[o_id] = TreeNode(o_id, o, children=[])
+#                 if s_id not in type_tree:
+#                     type_tree[s_id] = TreeNode(s_id, s, type_tree[o_id], children=[])
+#
+#                 if type_tree[s_id].parent is None:
+#                     type_tree[s_id].parent = type_tree[o_id]
+#                 if type_tree[s_id].parent == type_tree[o_id]:
+#                     type_tree[o_id].children.append(type_tree[s_id])
+#
+#     return type_tree
+#
+#
+# def dag_to_tree(dag):
+#     tree = {}
+#     for i, n in dag.items():
+#         tree[i] = TreeNode(n.node_id, n.name)
+#     for i, n in dag.items():
+#         tree[i].children = [tree[c.node_id] for c in n.children]
+#         tree[i].parent = None if not n.parents else tree[min(n.parents).node_id]
+#     for i, n in tree.items():
+#         for c in n.children:
+#             if c.parent != n:
+#                 n.children.remove(c)
+#     return tree
