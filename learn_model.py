@@ -1,11 +1,12 @@
 import pickle
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
+from typing import Tuple, List
 
 from kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelEMi
 from rules import RuleSet
 
 
-def main():
+def cli_args() -> Namespace:
     parser = ArgumentParser()
     parser.add_argument("input", type=str, default=None, help="path to the tensor npz file")
     parser.add_argument("-m", "--model", type=str, default="M1",
@@ -13,55 +14,89 @@ def main():
     parser.add_argument("-sm", "--source-kb-models", type=str, nargs="+", default=["M1", "M2", "M3"],
                         help="source model with entity selection bias [M1, M2, M3]")
     parser.add_argument("-r", "--rules-path", type=str, default=None, help="path to txt file with Amie horn rules")
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
-    base = args.input.replace(".npz", "")
+def build_m1_model(tensor_file: str, output_name: str) -> Tuple[KBModelM1, str]:
+    model = KBModelM1.generate_from_tensor(tensor_file)
+    return model, f"{output_name}-M1.pkl"
 
+
+def build_m2_model(tensor_file: str, output_name: str) -> Tuple[KBModelM2, str]:
+    m1_model_path = f"{output_name}-M1.pkl"
+    m1_model = pickle.load(open(m1_model_path, "rb"))
+    assert isinstance(m1_model, KBModelM1)
+
+    model = KBModelM2.generate_from_tensor(m1_model, tensor_file)
+    return model, f"{output_name}-M2.pkl"
+
+
+def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
+    m2_model_path = f"{output_name}-M2.pkl"
+    m2_model = pickle.load(open(m2_model_path, "rb"))
+    assert isinstance(m2_model, KBModelM2)
+
+    assert isinstance(m2_model, KBModelM2)
+    rel_dict = m2_model.rel_dict  # TODO: what is this
+    rules = RuleSet.parse_amie(rule_file, rel_dict)
+
+    model = KBModelM3(m2_model, rules)
+    return model, f"{output_name}-M3.pkl"
+
+
+def build_e_models(tensor_file: str, kb_models: List[str], output_name: str) -> Tuple[List[KBModelM1], List[str]]:
+    models = []
+    models_output = []
+    dist_subjects, dist_objects = None, None
+    for source_model_name in kb_models:
+        m1_model_path = f"{output_name}-{source_model_name}.pkl"
+        m1_model = pickle.load(open(m1_model_path, "rb"))
+        assert isinstance(m1_model, KBModelM1)
+
+        if dist_subjects is None and dist_objects is None:
+            model = KBModelEMi.generate_from_tensor(m1_model, tensor_file)
+            dist_subjects = model.dist_subjects
+            dist_objects = model.dist_objects
+        else:
+            model = KBModelEMi(m1_model, dist_subjects, dist_objects)
+        models.append(model)
+        models_output.append(f"{output_name}-e{source_model_name}.pkl")
+
+    return models, models_output
+
+
+def main():
+    args = cli_args()
     print(args)
-    print("learning " + args.model + " model")
+    base = args.input.replace(".npz", "")
+    print(f"Learning {args.model} model...")
 
     models = []
     models_output = []
 
     if args.model == "M1":
-        models.append(KBModelM1.generate_from_tensor(args.input))
-        models_output.append(base + "-M1.pkl")
+        model, output_name = build_m1_model(args.input, base)
+        models.append(model)
+        models_output.append(output_name)
 
     if args.model == "M2":
-        m1_model_path = base + "-M1.pkl"
-        m1_model = pickle.load(open(m1_model_path, "rb"))
-        assert isinstance(m1_model, KBModelM1)
-        models.append(KBModelM2.generate_from_tensor(m1_model, args.input))
-        models_output.append(base + "-M2.pkl")
+        model, output_name = build_m2_model(args.input, base)
+        models.append(model)
+        models_output.append(output_name)
 
     if args.model == "M3":
-        m2_model_path = base + "-M2.pkl"
-        m2_model = pickle.load(open(m2_model_path, "rb"))
-        assert isinstance(m2_model, KBModelM2)
-        rel_dict = m2_model.rel_dict
-        rules = RuleSet.parse_amie(args.rules_path, rel_dict)
-        models.append(KBModelM3(m2_model, rules))
-        models_output.append(base + "-M3.pkl")
+        model, output_name = build_m3_model(args.rules_path, base)
+        models.append(model)
+        models_output.append(output_name)
 
     if args.model == "e":
-        dist_subjects, dist_objects = None, None
-        for source_model_name in args.source_kb_models:
-            m1_model_path = base + "-" + source_model_name + ".pkl"
-            m1_model = pickle.load(open(m1_model_path, "rb"))
-            assert isinstance(m1_model, KBModelM1)
-            if dist_subjects is None and dist_objects is None:
-                model = KBModelEMi.generate_from_tensor(m1_model, args.input)
-                dist_subjects = model.dist_subjects
-                dist_objects = model.dist_objects
-                models.append(model)
-            else:
-                models.append(KBModelEMi(m1_model, dist_subjects, dist_objects))
-            models_output.append(base + "-e" + source_model_name + ".pkl")
+        e_models, output_names = build_e_models(args.input, args.source_kb_models, base)
+        models.extend(e_models)
+        models_output.extend(output_names)
 
     if models and models_output:
         for model, model_output in zip(models, models_output):
-            print("saving model to " + model_output)
+            print(f"Saving model to {model_output}...")
             pickle.dump(model, open(model_output, "wb"))
 
 
