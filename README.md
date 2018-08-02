@@ -57,7 +57,7 @@ For this example we use a small knowledge base from the Semantic Web dog food ab
 - From the learned models the knowledge base can be synthesized
 
  ```
- python synthesize.py eswc2015-M1.pkl eswc2015-replica-M1.n3 -size 0.1
+ python synthesize.py eswc2015-M3.pkl eswc2015-replica-M3.n3 --size 0.1
  ```
 
  This will synthesize a replica of the dataset with 10% of the original size and dump it into ```eswc2015-replica-M1.n3```
