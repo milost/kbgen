@@ -1,5 +1,5 @@
 import codecs
-from typing import List, Iterable
+from typing import List, Iterable, ValuesView, Union
 
 import numpy as np
 import logging
@@ -34,15 +34,18 @@ def dump_tsv(graph: Graph, output_file: str) -> None:
             file.write(f"{subject}\t{predicate}\t{rdf_object}\n")
 
 
-def normalize(l: List[float]) -> Iterable[float]:
+def normalize(values_view: Union[ValuesView[float], List[float]]) -> Iterable[float]:
     """
-    Normalizes the input float vector by its sum.
-    :param l: list of float values TODO: what do they represent
-    :return: normalized TODO what are these values
+    Normalizes the input float values by their sum. The result represents how often the associated value appears in the
+    distribution.
+    :param values_view: view of a list of float values that represent the number of occurrences of the associated values
+    :return: normalized vector in which every value is in [0, 1] and represents the frequency of the appearence of the
+             associated value
     """
-    l_array = np.array(list(l)).astype(float)
-    l_array /= sum(l_array)
-    return l_array.tolist()
+    values = list(values_view)
+    np_values = np.array(values).astype(float)
+    np_values /= sum(np_values)
+    return np_values.tolist()
 
 
 ################################################################################

@@ -1,3 +1,7 @@
+from typing import Dict
+
+from rdflib import URIRef
+
 from rules import Rule
 
 
@@ -12,12 +16,12 @@ class RuleSet(object):
                 self.rules_per_relation[literal.relation.id].append(rule)
 
     @classmethod
-    def parse_amie(cls, rules_path, rel_dict):
+    def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]):
         rules = []
         with open(rules_path, "r") as file:
             for line in file:
                 if line.startswith("?"):
-                    rule = Rule.parse_amie(line, rel_dict)
+                    rule = Rule.parse_amie(line, relation_to_id)
                     if rule is not None:
                         rules.append(rule)
         print(f"Rules successfully parsed: {len(rules)}...")

@@ -64,8 +64,8 @@ class KBModelM2(KBModelM1):
             if func == 1 and r in self.d_dr:
                 func_rels_subj_pool[r] = set()
                 for domain in self.d_dr[r]:
-                    if domain in self.entities_types.keys():
-                        func_rels_subj_pool[r] = func_rels_subj_pool[r].union(set(self.entities_types[domain]))
+                    if domain in self.entity_types_to_entity_ids.keys():
+                        func_rels_subj_pool[r] = func_rels_subj_pool[r].union(set(self.entity_types_to_entity_ids[domain]))
         return func_rels_subj_pool
 
     def invfunctional_rels_subj_pool(self):
@@ -75,53 +75,53 @@ class KBModelM2(KBModelM1):
                 invfunc_rels_subj_pool[r] = set()
                 for domain in self.d_dr[r]:
                     for range in self.d_rdr[r][domain]:
-                        if range in self.entities_types.keys():
-                            invfunc_rels_subj_pool[r] = invfunc_rels_subj_pool[r].union(set(self.entities_types[range]))
+                        if range in self.entity_types_to_entity_ids.keys():
+                            invfunc_rels_subj_pool[r] = invfunc_rels_subj_pool[r].union(set(self.entity_types_to_entity_ids[range]))
         return invfunc_rels_subj_pool
 
-    def synthesize(self, size=1, ne=None, nf=None, debug=False, pca=True):
+    def synthesize(self, size=1, number_of_entities=None, number_of_edges=None, debug=False, pca=True):
         print("Synthesizing OWL model")
 
         level = logging.DEBUG if debug else logging.INFO
         self.logger = create_logger(level, name="kbgen")
-        self.synth_time = create_logger(level, name="synth_time")
+        self.synth_time_logger = create_logger(level, name="synth_time")
 
         self.step = 1.0 / float(size)
-        synthetic_entities = int(self.n_entities / self.step)
-        synthetic_facts = int(self.n_facts / self.step)
-        if ne is not None:
-            synthetic_entities = ne
-        if nf is not None:
-            synthetic_facts = nf
+        synthetic_entities = int(self.entity_count / self.step)
+        synthetic_facts = int(self.edge_count / self.step)
+        if number_of_entities is not None:
+            synthetic_entities = number_of_entities
+        if number_of_edges is not None:
+            synthetic_facts = number_of_edges
 
         g = Graph()
 
         quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(self.dist_relations, quadratic_relations)
+        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(self.relation_distribution, quadratic_relations)
 
-        types = range(self.n_types)
-        relations = range(self.n_relations)
+        types = range(self.entity_type_count)
+        relations = range(self.relation_count)
 
-        g = self.synthesize_types(g, self.n_types)
-        g = self.synthesize_relations(g, self.n_relations)
+        g = self.synthesize_entity_types(g, self.entity_type_count)
+        g = self.synthesize_relations(g, self.relation_count)
         g = self.synthesize_schema(g)
         g, entities_types = self.synthesize_entities(g, synthetic_entities)
-        self.types_entities = {k: v for v in entities_types.keys() for k in entities_types[v]}
-        self.entities_types = entities_types
+        self.synthetic_id_to_type = {k: v for v in entities_types.keys() for k in entities_types[v]}
+        self.entity_types_to_entity_ids = entities_types
 
         self.logger.info("synthesizing facts")
-        dist_relations = normalize(list(adjusted_dist_relations.values()))
+        dist_relations = normalize(adjusted_dist_relations.values())
 
         dist_domains_relation = {}
         for rel in relations:
-            dist_domains_relation[rel] = normalize(list(self.dist_domains_relation[rel].values()))
+            dist_domains_relation[rel] = normalize(self.relation_domain_distribution[rel].values())
 
         dist_ranges_domain_relation = {}
         for rel in relations:
             dist_ranges_domain_relation[rel] = {}
-            for domain_i in self.dist_ranges_domain_relation[rel].keys():
+            for domain_i in self.relation_range_distribution[rel].keys():
                 dist_ranges_domain_relation[rel][domain_i] = normalize(
-                    list(self.dist_ranges_domain_relation[rel][domain_i].values()))
+                    self.relation_range_distribution[rel][domain_i].values())
 
         self.count_facts = 0
         self.count_already_existent_facts = 0
@@ -130,18 +130,18 @@ class KBModelM2(KBModelM1):
         self.count_violate_non_reflexiveness_facts = 0
 
         self.logger.info(str(synthetic_facts) + " facts to be synthesized")
-        self.pbar = tqdm.tqdm(total=synthetic_facts)
+        self.progress_bar = tqdm.tqdm(total=synthetic_facts)
         self.start_t = datetime.datetime.now()
         while self.count_facts < synthetic_facts:
-            rel_i = choice(self.dist_relations.keys(), 1, True, dist_relations)[0]
-            if rel_i in self.dist_relations.keys():
+            rel_i = choice(self.relation_distribution.keys(), 1, True, dist_relations)[0]
+            if rel_i in self.relation_distribution.keys():
                 # rel_i = self.dist_relations.keys().index(rel_uri)
                 # rel_i = i
-                domain_i = choice(self.dist_domains_relation[rel_i].keys(), 1, p=dist_domains_relation[rel_i])
+                domain_i = choice(self.relation_domain_distribution[rel_i].keys(), 1, p=dist_domains_relation[rel_i])
                 domain_i = domain_i[0]
                 n_entities_domain = len(entities_types[domain_i])
 
-                range_i = choice(self.dist_ranges_domain_relation[rel_i][domain_i].keys(),
+                range_i = choice(self.relation_range_distribution[rel_i][domain_i].keys(),
                                  1, p=dist_ranges_domain_relation[rel_i][domain_i])
                 range_i = range_i[0]
                 n_entities_range = len(entities_types[range_i])

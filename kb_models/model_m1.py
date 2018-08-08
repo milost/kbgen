@@ -1,14 +1,18 @@
+from typing import Dict, Tuple, List
+
 from load_tensor_tools import loadGraphNpz, loadTypesNpz, load_types_dict, load_relations_dict, load_type_hierarchy, \
     load_prop_hierarchy, load_domains, load_ranges
 from kb_models.model import KBModel
-from rdflib import Graph, RDF, OWL, RDFS
+from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
+
+from tensor_models import DAGNode
 from util_models import URIEntity, URIRelation, URIType, MultiType
 from util import normalize, create_logger
 import logging
 from scipy.sparse import csr_matrix
 import tqdm
-import time, datetime
+import datetime
 
 
 class KBModelM1(KBModel):
@@ -17,40 +21,120 @@ class KBModelM1(KBModel):
     relations, subject and object type sets (represented with the chain rule)
     """
 
-    def __init__(self, type_hierarchy, prop_hierarchy, domains, ranges, n_entities, n_relations, n_facts, n_types,
-                 dist_types, dist_relations,
-                 dist_domains_relation, dist_ranges_domain_relation, rel_dict, types_dict=None):
+    def __init__(self,
+                 entity_type_hierarchy: Dict[int, DAGNode],
+                 object_property_hierarchy: Dict[int, DAGNode],
+                 domains: Dict[int, int],
+                 ranges: Dict[int, int],
+                 entity_count: int,
+                 relation_count: int,
+                 edge_count: int,
+                 entity_type_count: int,
+                 entity_type_distribution: Dict[MultiType, float],
+                 relation_distribution: Dict[int, int],
+                 relation_domain_distribution: Dict[int, Dict[MultiType, int]],
+                 relation_range_distribution: Dict[int, Dict[MultiType, Dict[MultiType, int]]],
+                 relation_to_id: Dict[URIRef, int],
+                 entity_type_to_id: Dict[URIRef, int] = None):
+        """
+        Creates an M1 model with the passed data.
+        :param entity_type_hierarchy: dictionary pointing from an entity type's id to its DAGNode in the hierarchy of
+                                      entity types
+        :param object_property_hierarchy: dictionary pointing from an object property's id to its DAGNode in the
+                                          hierarchy of object properties
+        :param domains: dictionary pointing from property ids to the id of the entity type, whose instances are
+                        described by that property
+        :param ranges: dictionary pointing from property ids to the id of the entity type id, whose instances are the
+                       values of that property
+        :param entity_count: the number of entities in the rdf data
+        :param relation_count: the number of relations in the rdf data (size of relation_id)
+        :param edge_count: the number of edges of object properties in the graph (facts)
+        :param entity_type_count: the number of entity types in the rdf data (size of entity_type_id)
+        :param entity_type_distribution: the distribution of entities over entity types. A dictionary that points from a
+                                         multi type (a set of entity types) to its number of occurrences
+        :param relation_distribution: the distribution of facts over relations (object properties). A dictionary
+                                      pointing from the id of an object property (relation) to the number of edges that
+                                      exist for that relation
+        :param relation_domain_distribution: the distribution of subject entity types given the relation
+                                             (object property). A dictionary pointing from an relation id to a
+                                             dictionary that points from a subject's multi type to a number of
+                                             occurrences of that subject's multi type
+        :param relation_range_distribution: the distribution of object entity types given relation and subject entity
+                                            type. A dictionary pointing from an relation id to a dictionary that points
+                                            from a subject's multi type to a dictionary that points from an object's
+                                            multi type to the number of occurrences of that object's multi type
+        :param relation_to_id: dictionary of the RDF relations and their ids
+        :param entity_type_to_id: dictionary of the RDF entity types and their ids
+        """
         super(KBModelM1, self).__init__()
-        self.n_entities = n_entities
-        self.n_relations = n_relations
-        self.n_facts = n_facts
-        self.n_types = n_types
-        self.dist_types = dist_types  # distribution of entities over types
-        self.dist_relations = dist_relations  # distribution of facts over relations
-        self.dist_domains_relation = dist_domains_relation  # distribution of subject types given relation
-        self.dist_ranges_domain_relation = dist_ranges_domain_relation  # distribtution of object types given relation and subject type
-        self.rel_dict = rel_dict
-        self.types_dict = types_dict
+        self.entity_count = entity_count
+        self.relation_count = relation_count
+        self.edge_count = edge_count
+        self.entity_type_count = entity_type_count
+
+        self.entity_type_distribution = entity_type_distribution
+        self.relation_distribution = relation_distribution
+        self.relation_domain_distribution = relation_domain_distribution
+        self.relation_range_distribution = relation_range_distribution
+
+        self.relation_to_id = relation_to_id
+        self.entity_type_to_id = entity_type_to_id
         self.domains = domains
         self.ranges = ranges
-        self.type_hierarchy = type_hierarchy
-        self.prop_hierarchy = prop_hierarchy
+
+        self.entity_type_hierarchy = entity_type_hierarchy
+        self.object_property_hierarchy = object_property_hierarchy
         self.fix_hierarchies()
 
+        # initialized in other methods
+        #
+        # normal logger and logger for the synthesizing performance
+        self.logger = None
+        self.synth_time_logger = None
+
+        # used to scale the synthesized knowledge base
+        self.step: float = None
+        # points from synthetic entity id to the multi type of that synthetic entity
+        self.synthetic_id_to_type: Dict[int, MultiType] = None
+        # points from a multi type to the list of synthetic entity ids of the synthetic entity with that multi type
+        self.entity_types_to_entity_ids: Dict[MultiType, List[int]] = None
+
+        # the number of facts that were added to the synthesized graph
+        self.fact_count: int = 0
+        # the number of facts that were generate but were a duplicate of a previously generated fact
+        self.duplicate_fact_count: int = 0
+        # progress bar used for synthesizing relations
+        self.progress_bar: tqdm = None
+        # start time delta used for measuring of synthesizing relations
+        self.start_t: datetime = None
 
     def fix_hierarchies(self):
-        for i, n in self.type_hierarchy.items():
-            n.children = [c if isinstance(c, int) else c.node_id for c in n.children]
-            n.parents = [p if isinstance(p, int) else p.node_id for p in n.parents]
-        for i, n in self.prop_hierarchy.items():
-            n.children = [c if isinstance(c, int) else c.node_id for c in n.children]
-            n.parents = [p if isinstance(p, int) else p.node_id for p in n.parents]
+        """
+        Replaces the references to other DAG nodes in the lists of children and parents in every DAG node with the
+        unique node ids of that DAG node to prevent recursion (e.g., when serializing the DAG). This is also done
+        in load_tensor and is only done here if it wasn't already done before.
+        """
+        for entity_type_id, entity_type_dag_node in self.entity_type_hierarchy.items():
+            entity_type_dag_node.children = [child if isinstance(child, int) else child.node_id
+                                             for child in entity_type_dag_node.children]
+            entity_type_dag_node.parents = [parent if isinstance(parent, int) else parent.node_id
+                                            for parent in entity_type_dag_node.parents]
 
-    def print_synthesis_details(self):
-        self.logger.debug(str(self.count_facts) + " facts added")
-        self.logger.debug("already existent: %d" % self.count_already_existent_facts)
+        for property_id, property_dag_node in self.object_property_hierarchy.items():
+            property_dag_node.children = [child if isinstance(child, int) else child.node_id
+                                          for child in property_dag_node.children]
+            property_dag_node.parents = [parent if isinstance(parent, int) else parent.node_id
+                                         for parent in property_dag_node.parents]
+
+    def print_synthesis_details(self) -> None:
+        self.logger.debug(f"{self.fact_count} facts added")
+        self.logger.debug(f"{self.duplicate_fact_count} of those already existed")
 
     def check_for_quadratic_relations(self):
+        """
+        TODO: this is only called in the m2 and m3 model since there the missing instance variables are defined.
+        :return:
+        """
         quadratic_relations = []
         for r in self.rel_densities.keys():
             func = self.functionalities[r]
@@ -62,256 +146,527 @@ class KBModelM1(KBModel):
                 reflex = self.reflexiveness[r]
 
                 if density > 0.1:
-                    self.logger.debug(
-                        "relation %d:  func=%f,  inv_func=%f,  density=%f,  n_obj=%d,  n_subj=%d,  reflex=%d" % (
-                        r, func, inv_func, density, n_obj, n_subj, reflex))
+                    self.logger.debug(f"relation {r}: func={func}, inv_func={inv_func}, density={density}, "
+                                      f"n_obj={n_obj}, n_subj={n_subj}, eflex={reflex}")
                     quadratic_relations.append(r)
         return quadratic_relations
 
-    def adjust_quadratic_relation_distributions(self, dist_rel, quadratic_relations):
-        self.logger.debug("adjusting distribution because of quadratic relations %s"%str(quadratic_relations))
-        for r in quadratic_relations:
-            dist_rel[r] = dist_rel[r] / self.step
-        return dist_rel
+    def adjust_quadratic_relation_distributions(self, relation_distribution: Dict[int, float], quadratic_relations):
+        """
+        TODO
+        :param relation_distribution: the distribution of the relations. A dictionary pointing from relation ids to
+                                      the number of occurrences of that relation type
+        :param quadratic_relations: TODO
+        :return: TODO
+        """
+        self.logger.debug(f"Adjusting distribution because of quadratic relations {quadratic_relations}")
+        # TODO why are quadratic relations scaled by the knowledge base scale (i.e., * size)
+        for relation_id in quadratic_relations:
+            relation_distribution[relation_id] = relation_distribution[relation_id] / self.step
+        return relation_distribution
 
-    def add_fact(self, g, fact):
-        prev_size = len(g)
-        g.add(fact)
-        if len(g) > prev_size:
-            self.pbar.update(1)
-            self.count_facts += 1
-            if self.count_facts % 10000 == 0:
+    def add_fact(self, graph: Graph, fact: Tuple[str, str, str]) -> bool:
+        """
+        Add a fact (triple) to the graph. Afterwards check if this fact was not previously generated or if it was
+        already known and increment the appropriate counters.
+        :param graph: the synthesized graph object
+        :param fact: triple containing the entity and relation ids of subject, relation and object
+        :return: boolean indicating if the fact was a new fact
+        """
+        graph_size = len(graph)
+        graph.add(fact)
+        # if the fact was a new fact and increased the size of the graph
+        if len(graph) > graph_size:
+            # increment counters and log synthesis details every n facts
+            self.progress_bar.update(1)
+            self.fact_count += 1
+            if self.fact_count % 10000 == 0:
                 self.print_synthesis_details()
+
+            # log the time it took for the current graph size
             delta = datetime.datetime.now() - self.start_t
-            self.synth_time.debug("%d,%d" % (len(g), delta.microseconds / 1000))
+            self.synth_time_logger.debug(f"{len(graph)}, {delta.microseconds / 1000}")
             return True
         else:
-            self.count_already_existent_facts += 1
+            self.duplicate_fact_count += 1
             return False
 
-    def synthesize_types(self, g, n_types):
-        self.logger.info("synthesizing types")
-        for i in range(n_types):
-            type_i = URIType(i).uri
-            g.add((type_i, RDF.type, OWL.Class))
-        self.logger.info(str(n_types) + " types added")
-        return g
+    def synthesize_entity_types(self, graph: Graph, entity_type_count: int) -> Graph:
+        """
+        Adds a triple defining the entity type relation for every entity type. The ids of these entity types are in
+        [0, entity_type_count). These triples look like (entity_type, is of type, class).
+        :param graph: the synthesized graph object
+        :param entity_type_count: the number of entity types that should be synthesized
+        :return: the synthesized graph object with triples that define the entity types
+        """
+        self.logger.info("Synthesizing entity types...")
 
-    def synthesize_schema(self, g):
-        self.logger.info("synthesizing schema")
+        for entity_type_id in range(entity_type_count):
+            entity_type = URIType(entity_type_id).uri
+            graph.add((entity_type, RDF.type, OWL.Class))
+
+        self.logger.info(f"{entity_type_count} types added")
+        return graph
+
+    def synthesize_schema(self, graph: Graph) -> Graph:
+        """
+        Adds the triples defining the schema related information to the synthesized graph. This schema is the entity
+        type hierarchy, the property hierarchy, the property domains and the property ranges.
+        :param graph: the synthesized graph object
+        :return: the synthesized graph object with the triples defining the entity type hierarchy, the property
+                 hierarchy, the property domains and the property ranges
+        """
+        self.logger.info("Synthesizing schema...")
+
+        # remove recursions from entity type and object property hierarchies if not already done
         self.fix_hierarchies()
-        if self.type_hierarchy:
-            for id, l in self.type_hierarchy.items():
-                type_child = URIType(id).uri
-                for p_i in l.parents:
-                    if not isinstance(p_i, int):
-                        p = self.type_hierarchy[p_i]
-                        p_i = p.node_id
-                    type_parent = URIType(p_i).uri
-                    g.add((type_child, RDFS.subClassOf, type_parent))
 
-        if self.prop_hierarchy:
-            for id, l in self.prop_hierarchy.items():
-                type_child = URIRelation(id).uri
-                for p_i in l.parents:
-                    if not isinstance(p_i, int):
-                        p = self.prop_hierarchy[p_i]
-                        p_i = p.node_id
-                    type_parent = URIRelation(p_i).uri
-                    g.add((type_child, RDFS.subPropertyOf, type_parent))
+        # add the entity type hierarchy relations to the synthesized graph
+        if self.entity_type_hierarchy:
+            for entity_type_id, entity_type_node in self.entity_type_hierarchy.items():
+                # the actual entity type (uri)
+                entity_type = URIType(entity_type_id).uri
 
+                # add the subclass relations between the current entity type and its parents/superclasses to the graph
+                for parent in entity_type_node.parents:
+                    # remove recursion from hierarchy by replacing parent DAG nodes with the ids of these nodes if they
+                    # aren't the ids yet
+                    # this should never happen
+                    if not isinstance(parent, int):
+                        parent_node = self.entity_type_hierarchy[parent]
+                        parent = parent_node.node_id
+
+                    # the actual entity type of the current parent (superclass)
+                    entity_type_parent = URIType(parent).uri
+
+                    # add the subclass relation between the current entity type and its current parent
+                    graph.add((entity_type, RDFS.subClassOf, entity_type_parent))
+
+        # add the property type hierarchy relations to the synthesized graph
+        if self.object_property_hierarchy:
+            for property_id, property_type_node in self.object_property_hierarchy.items():
+                # the actual property type (uri)
+                property_type = URIRelation(property_id).uri
+
+                # add the subclass relations between the current property type and its parents/superclasses to the graph
+                for parent in property_type_node.parents:
+                    # remove recursion from hierarchy by replacing parent DAG nodes with the ids of these nodes if they
+                    # aren't the ids yet
+                    # this should never happen
+                    if not isinstance(parent, int):
+                        parent_node = self.object_property_hierarchy[parent]
+                        parent = parent_node.node_id
+
+                    # the actual property type of the current parent (superclass)
+                    property_type_parent = URIRelation(parent).uri
+
+                    # add the subclass relation between the current property type and its current parent
+                    graph.add((property_type, RDFS.subPropertyOf, property_type_parent))
+
+        # add the domain triples to the synthesized graph
         if self.domains:
-            for r, t in self.domains.items():
-                rel = URIRelation(r).uri
-                domain = URIType(t).uri
-                g.add((rel, RDFS.domain, domain))
+            for property_id, entity_type_id in self.domains.items():
+                object_property = URIRelation(property_id).uri
+                object_property_domain = URIType(entity_type_id).uri
+                graph.add((object_property, RDFS.domain, object_property_domain))
 
+        # add the range triples to the synthesized graph
         if self.ranges:
-            for r, t in self.ranges.items():
-                rel = URIRelation(r).uri
-                range = URIType(t).uri
-                g.add((rel, RDFS.range, range))
+            for property_id, entity_type_id in self.ranges.items():
+                object_property = URIRelation(property_id).uri
+                object_property_range = URIType(entity_type_id).uri
+                graph.add((object_property, RDFS.range, object_property_range))
 
-        return g
+        return graph
 
-    def synthesize_relations(self, g, n_relations):
-        self.logger.info("synthesizing relations")
+    def synthesize_relations(self, graph: Graph, relation_count: int) -> Graph:
+        """
+        Adds a triple defining the relation (type) for every relation. The ids of these relations are in
+        [0, relation_count). These triples look like (relation, is of type, object property).
+        :param graph: the synthesized graph object
+        :param relation_count: the number of different relations that should be synthesized
+        :return: the synthesized graph object with triples that define the different relations
+        """
+        self.logger.info("Synthesizing relations...")
 
-        for i in range(n_relations):
-            rel_i = URIRelation(i).uri
-            g.add((rel_i, RDF.type, OWL.ObjectProperty))
-        self.logger.info(str(self.n_relations) + " relations added")
-        return g
+        for relation_id in range(relation_count):
+            relation = URIRelation(relation_id).uri
+            graph.add((relation, RDF.type, OWL.ObjectProperty))
 
-    def synthesize_entities(self, g, n_entities):
-        self.logger.info("synthesizing entities")
+        self.logger.info(f"{self.relation_count} relations added")
+        return graph
 
-        entity_types_dict = {}
-        for i in self.dist_types.keys():
-            entity_types_dict[i] = []
-        entity_types = choice(list(self.dist_types.keys()), n_entities, True, normalize(list(self.dist_types.values())))
+    def synthesize_entities(self,
+                            graph: Graph,
+                            synthetic_entity_count: int) -> Tuple[Graph, Dict[MultiType, List[int]]]:
+        """
+        Adds all triples defining the is type of relation for every synthetic entity. Every entity is assigned a
+        multi type at random (via the entity type distribution) and a type of relation is added for every entity type
+        in that multi type.
+        :param graph: the synthesized graph object
+        :param synthetic_entity_count: the number of synthetic entities that are added
+        :return: a tuple of the synthesized graph object with triples added that define the entity types of the
+                 synthetic entities and a dictionary of the multi types pointing to a list of ids of the synthethic
+                 entities of that multi type
+        """
+        self.logger.info("Synthesizing entities...")
+
+        # dictionary that points from an entity type set (multi type) to a list of synthetic entity ids of that type
+        entity_types_to_entity_ids = {}
+
+        # initialize the value of every multi type as empty list
+        for multi_type in self.entity_type_distribution.keys():
+            entity_types_to_entity_ids[multi_type] = []
+
+        # select a random entity type set (multi type) of every entity that will be synthesized determined by the
+        # normalized number of occurrences of every entity type
+        entity_types = choice(
+            list(self.entity_type_distribution.keys()),  # the values that are sampled (multi types)
+            size=synthetic_entity_count,  # the number of samples that are returned
+            replace=True,
+            p=normalize(self.entity_type_distribution.values()))  # normalized occurrences here used as probabilities
+
+        # the number of is type of relations that are added for synthetic entities
         type_assertions = 0
-        pbar = tqdm.tqdm(total=n_entities)
-        for i in range(n_entities):
-            entity_types_dict[entity_types[i]].append(i)
-            entity_i = URIEntity(i).uri
-            for t_i in entity_types[i].types:
-                type_i = URIType(t_i).uri
-                g.add((entity_i, RDF.type, type_i))
-                type_assertions += 1
-            pbar.update(1)
-        self.logger.debug(str(n_entities) + " entities with " + str(type_assertions) + " type assertions added")
-        return g, entity_types_dict
 
+        # progess bar used for cli
+        progess_bar = tqdm.tqdm(total=synthetic_entity_count)
+
+        # add all triples that define the is type of entity type relations for every synthetic entity
+        for synthetic_entity_id in range(synthetic_entity_count):
+            # randomly selected entity type for the current synthetic entity
+            type_of_synthetic_entity = entity_types[synthetic_entity_id]
+
+            # append entity id of the current synthetic entity to the list of synthetic entities with that entity type
+            entity_types_to_entity_ids[type_of_synthetic_entity].append(synthetic_entity_id)
+
+            # the actual synthetic entity
+            synthetic_entity = URIEntity(synthetic_entity_id).uri
+
+            # add the rdf is type of relation to every entity type in the multi type for the current synthetic entity
+            for multi_type_subtype_id in entity_types[synthetic_entity_id].types:
+                multi_type_subtype = URIType(multi_type_subtype_id).uri
+                graph.add((synthetic_entity, RDF.type, multi_type_subtype))
+                type_assertions += 1
+
+            progess_bar.update(1)
+
+        self.logger.debug(f"{synthetic_entity_count} entities with {type_assertions} type assertions added")
+        return graph, entity_types_to_entity_ids
+
+    # TODO
     def select_instance(self, n, model=None):
         return randint(n)
 
-    def select_subject_model(self, r, domain):
+    def select_subject_model(self, relation_id: str, relation_domain: MultiType):
+        """
+        Implemented in model_emi. Return a model that will select one of many entities of the given multi type as a
+        subject for a relation.
+        :param relation_id: id of the relation type for which a subject will be chosen
+        :param relation_domain: the domain of the relation, i.e., the multi type of the entity that will be the subject
+        :return: TODO
+        """
         return None
 
-    def select_object_model(self, r, domain, range):
+    def select_object_model(self, relation_id: str, relation_domain: MultiType, relation_range: MultiType):
+        """
+        Implemented in model_emi. Return a model that will select one of many entities of the given range multi type as
+        an object for a relation with a given subject multi type (the domain).
+        :param relation_id: id of the relation type for which a subject will be chosen
+        :param relation_domain: the domain of the relation, i.e., the multi type of the entity that will be the subject
+        :param relation_range: the range of the relation, i.e., the multi type of the entity that will be the object
+                               given the multi type of the subject
+        :return: TODO
+        """
         return None
 
-    def synthesize(self, size=1.0, ne=None, nf=None, debug=False, pca=True, ):
-        print("Synthesizing NAIVE model")
+    def synthesize(self,
+                   size: float = 1.0,
+                   number_of_entities: int = None,
+                   number_of_edges: int = None,
+                   debug: bool = False,
+                   pca: bool = True) -> Graph:
+        """
+        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
+        entities and edges.
+        :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
+                     the model was trained on, 2.0 means it should have twice the size)
+        :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
+                                   will be determined by the number of entities on which the model was trained and the
+                                   size parameter
+        :param number_of_edges: the number of edges (facts) the synthesized graph should have. If not set this number
+                                will be determined by the number of edges on which the model was trained and the size
+                                parameter
+        :param debug: boolean if logging should be on debug level
+        :param pca: boolean if PCA should be used. This parameter is not used
+        :return: the synthesized graph as rdf graph object
+        """
+        print("Synthesizing NAIVE model...")
 
         level = logging.DEBUG if debug else logging.INFO
         self.logger = create_logger(level, name="kbgen")
-        self.synth_time = create_logger(level, name="synth_time")
+        self.synth_time_logger = create_logger(level, name="synth_time")
 
-        self.step = 1.0 / float(size)
-        sythetic_entities = int(self.n_entities / self.step)
-        synthetic_facts = int(self.n_facts / self.step)
+        # scale the entity and edge count by the given size
+        self.step = 1.0 / size
+        num_synthetic_entities = int(self.entity_count / self.step)
+        num_synthetic_facts = int(self.edge_count / self.step)
 
-        if ne is not None:
-            synthetic_entities = ne
-        if nf is not None:
-            synthetic_facts = nf
+        # overwrite dynamic sizes with static sizes if they were set
+        if number_of_entities is not None:
+            num_synthetic_entities = number_of_entities
+        if number_of_edges is not None:
+            num_synthetic_facts = number_of_edges
 
-        g = Graph()
+        # the synthesized graph (initialised emtpy)
+        graph = Graph()
 
+        # TODO
         quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(self.dist_relations, quadratic_relations)
+        adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(self.relation_distribution,
+                                                                                       quadratic_relations)
+        # list of the ids of the synthesized entities and relations
+        # entity_type_ids = range(self.entity_type_count)
+        relation_ids = range(self.relation_count)
 
-        types = range(self.n_types)
-        relations = range(self.n_relations)
+        # adds the triples that define the entity types as such (classes)
+        graph = self.synthesize_entity_types(graph, self.entity_type_count)
 
-        g = self.synthesize_types(g, self.n_types)
-        g = self.synthesize_relations(g, self.n_relations)
-        g = self.synthesize_schema(g)
-        g, entities_types = self.synthesize_entities(g, sythetic_entities)
-        self.types_entities = {k: v for v in entities_types.keys() for k in entities_types[v]}
-        self.entities_types = entities_types
+        # adds the triples that define the relations as such (object properties)
+        graph = self.synthesize_relations(graph, self.relation_count)
 
-        self.logger.info("synthesizing facts")
-        dist_relations = normalize(list(adjusted_dist_relations))
+        # adds the triples that define the entity type and property type hierarchies and the property domains and ranges
+        graph = self.synthesize_schema(graph)
 
-        dist_domains_relation = {}
-        for rel in relations:
-            dist_domains_relation[rel] = normalize(list(self.dist_domains_relation[rel].values()))
+        # add synthetic entities to the graph by adding the triples that define the type of relation for every entity
+        # synthetic entities are assigned multi types at random (via distribution) and the type of relation is added
+        # for every entity type in that multi type
+        # returns the new graph and a dictionary containing the used multi types pointing to the entity ids of the
+        # synthetic entities of that type
+        graph, entity_types_to_entity_ids = self.synthesize_entities(graph, num_synthetic_entities)
 
-        dist_ranges_domain_relation = {}
-        for rel in relations:
-            dist_ranges_domain_relation[rel] = {}
-            for domain_i in self.dist_ranges_domain_relation[rel].keys():
-                dist_ranges_domain_relation[rel][domain_i] = normalize(
-                    list(self.dist_ranges_domain_relation[rel][domain_i].values()))
+        # reverse the dictionary so that every synthetic entity id points to its multi type
+        self.synthetic_id_to_type = {synthetic_entity_id: multi_type for multi_type in entity_types_to_entity_ids.keys()
+                                     for synthetic_entity_id in entity_types_to_entity_ids[multi_type]}
+        self.entity_types_to_entity_ids = entity_types_to_entity_ids
 
-        self.count_facts = 0
-        self.count_already_existent_facts = 0
-        self.logger.info(str(synthetic_facts) + " facts to be synthesized")
-        self.pbar = tqdm.tqdm(total=synthetic_facts)
+        self.logger.info("Synthesizing edges/facts...")
+
+        # normalize relation distribution
+        # first sort the dictionary by the relation id (which are in [0, num_relations)) then normalize them
+        sorted_values = [occurrences for relation_id, occurrences in sorted(adjusted_relations_distribution.items())]
+        normalized_values = list(normalize(sorted_values))
+        # dictionary of relation ids pointing to their frequency (in [0, 1])
+        relation_distribution: Dict[int, float] = {}
+        # add normalized relation occurrences to the distribution dictionary
+        for relation_id in adjusted_relations_distribution.keys():
+            relation_distribution[relation_id] = normalized_values[relation_id]
+
+        # normalize relation domain distribution
+        # this is basically just copies relation_domain_distribution and replaces the occurrences with normalized values
+        relation_domain_distribution = {}
+        for relation_id in relation_ids:
+            normalized_distribution = normalize(self.relation_domain_distribution[relation_id].values())
+            relation_domain_distribution[relation_id] = normalized_distribution
+
+        # normalize relation range distribution
+        # this is basically just copies relation_range_distribution and replaces the occurrences with normalized values
+        relation_range_distribution = {}
+        for relation_id in relation_ids:
+            relation_range_distribution[relation_id] = {}
+            for relation_domain in self.relation_range_distribution[relation_id].keys():
+                relation_range_values = self.relation_range_distribution[relation_id][relation_domain].values()
+                relation_range_distribution[relation_id][relation_domain] = normalize(relation_range_values)
+
+        # counter for the number of facts in the graph
+        self.fact_count = 0
+        # counter of duplicate facts that were generated
+        self.duplicate_fact_count = 0
+
+        self.logger.info(f"{num_synthetic_facts} facts to be synthesized")
+        # progress bar
+        self.progress_bar = tqdm.tqdm(total=num_synthetic_facts)
+        # start delta used for time logging
         self.start_t = datetime.datetime.now()
-        while self.count_facts < synthetic_facts:
 
-            rel_i = choice(self.dist_relations.keys(), 1, True, dist_relations)[0]
-            if rel_i in self.dist_relations.keys():
-                # rel_i = self.dist_relations.keys().index(rel_uri)
-                # rel_i = i
-                domain_i = choice(list(self.dist_domains_relation[rel_i].keys()), 1, p=dist_domains_relation[rel_i])
-                domain_i = domain_i[0]
-                n_entities_domain = len(entities_types[domain_i])
+        # repeat until enough facts were generated
+        while self.fact_count < num_synthetic_facts:
+            # choose a random relation type according to the relation distribution
+            relation_id = choice(list(self.relation_distribution.keys()), replace=True, p=relation_distribution)
+            if relation_id in self.relation_distribution.keys():
+                # relation_id = self.dist_relations.keys().index(rel_uri)
+                # relation_id = i
 
-                range_i = choice(self.dist_ranges_domain_relation[rel_i][domain_i].keys(),
-                                 1, p=dist_ranges_domain_relation[rel_i][domain_i])
-                range_i = range_i[0]
-                n_entities_range = len(entities_types[range_i])
+                # select random domain of the valid domains for this relation type according to the domain distribution
+                # a domain is a multi type
+                relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
+                                         p=relation_domain_distribution[relation_id])
 
-                if n_entities_domain > 0 and n_entities_range > 0:
-                    subject_model = self.select_subject_model(rel_i, domain_i)
-                    object_model = self.select_object_model(rel_i, domain_i, range_i)
+                # the number of synthetic entities with the multi type of the selected domain
+                entity_domain_count = len(entity_types_to_entity_ids[relation_domain])
 
-                    object_i = entities_types[range_i][self.select_instance(n_entities_range, object_model)]
-                    subject_i = entities_types[domain_i][self.select_instance(n_entities_domain, subject_model)]
+                # select random range of the valid ranges for the selected domain according to the range distribution
+                # a range is a multi type
+                relation_range = choice(self.relation_range_distribution[relation_id][relation_domain].keys(),
+                                        p=relation_range_distribution[relation_id][relation_domain])
 
-                    p_i = URIRelation(rel_i).uri
-                    s_i = URIEntity(subject_i).uri
-                    o_i = URIEntity(object_i).uri
+                # the number of synthetic entities with the multi type of the selected range
+                entity_range_count = len(entity_types_to_entity_ids[relation_range])
 
-                    fact = (s_i, p_i, o_i)
+                # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
+                # the range
+                if entity_domain_count > 0 and entity_range_count > 0:
+                    # TODO
+                    subject_model = self.select_subject_model(relation_id, relation_domain)
+                    # TODO
+                    object_model = self.select_object_model(relation_id, relation_domain, relation_range)
 
-                    self.add_fact(g, fact)
-        return g
+                    # select one of the possible entities as a subject according to the subject model
+                    possible_subject_entities = entity_types_to_entity_ids[relation_domain]
+                    subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
+
+                    # select one of the possible entities as an object according to the object model
+                    possible_object_entities = entity_types_to_entity_ids[relation_range]
+                    object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
+
+                    # create fact with the ids of the entities and add it to the graph
+                    relation_id = URIRelation(relation_id).uri
+                    subject_od = URIEntity(subject_entity).uri
+                    object_id = URIEntity(object_entity).uri
+
+                    fact = (subject_od, relation_id, object_id)
+
+                    self.add_fact(graph, fact)
+        return graph
 
     @staticmethod
-    def generate_from_tensor(input_path, debug=False):
+    def generate_from_tensor(input_path: str, debug: bool = False) -> 'KBModelM1':
+        """
+        Generates an M1 model from the specified tensor file.
+        :param input_path: path to the numpy tensor file
+        :param debug: boolean indicating if the logging level is on debug
+        :return: an M1 model generated from the tensor file
+        """
         if debug:
             logger = create_logger(logging.DEBUG)
         else:
             logger = create_logger(logging.INFO)
 
-        logger.info("loading data")
-        X = loadGraphNpz(input_path)
-        types = loadTypesNpz(input_path)
+        logger.info("Loading data...")
+        # the list of adjacency matrices of the object property relations created in load_tensor
+        relation_adjaceny_matrices = loadGraphNpz(input_path)
+
+        # the entity type adjacency matrix created in load_tensor
+        entity_types = loadTypesNpz(input_path)
+
+        # the rdf domains and ranges created in load_tensor
         domains = load_domains(input_path)
         ranges = load_ranges(input_path)
-        type_hierarchy = load_type_hierarchy(input_path)
-        prop_hierarchy = load_prop_hierarchy(input_path)
-        types_dict = load_types_dict(input_path)
-        rels_dict = load_relations_dict(input_path)
 
-        if not isinstance(types, csr_matrix):
-            types = types.tocsr()
+        # the entity type and the object property hierarchies created in load_tensor
+        entity_type_hierarchy = load_type_hierarchy(input_path)
+        object_property_hierarchy = load_prop_hierarchy(input_path)
 
-        logger.info("learning types distributions")
-        count_entities = types.shape[0]
-        count_types = types.shape[1]
-        count_relations = len(X)
-        count_facts = sum([Xi.nnz for Xi in X])
+        # the dictionaries of entity types and of object properties pointing to their ids
+        entity_type_to_id = load_types_dict(input_path)
+        # relations are object properties
+        relation_to_id = load_relations_dict(input_path)
 
-        dist_types = {}
-        for type in types:
-            e_types = MultiType(type.indices)
-            if e_types not in dist_types:
-                dist_types[e_types] = 0.0
-            dist_types[e_types] += 1
+        # compress entity type adjacency matrix if it is not already compressed
+        if not isinstance(entity_types, csr_matrix):
+            entity_types = entity_types.tocsr()
 
-        logger.info("learning relations distributions")
-        dist_relations = {p: X[p].nnz for p in range(len(X))}
-        dist_domains_relation = {}
-        dist_ranges_domain_relation = {}
+        logger.info("Learning types distributions...")
+        # the entity type adjacency matrix has the dimensions num_entities x num_entity_types
+        count_entities = entity_types.shape[0]
+        count_types = entity_types.shape[1]
+        # number of different relations (object properties)
+        count_relations = len(relation_adjaceny_matrices)
+        # number of object property edges (number of non zero fields in every adjacency matrix)
+        count_facts = sum([Xi.nnz for Xi in relation_adjaceny_matrices])
 
-        for p in range(len(X)):
-            dist_domains_relation[p] = {}
-            dist_ranges_domain_relation[p] = {}
-            for i in range(X[p].nnz):
-                s = X[p].row[i]
-                o = X[p].col[i]
-                s_types = MultiType(types[s].indices)
-                o_types = MultiType(types[o].indices)
+        # the distribution of entities over entity types
+        # the number of occurrences of every set of entity types that occurs
+        # dictionary that points from a multi type (a set of entity types) to its number of occurrences
+        entity_type_distribution = {}
+        for entity_type in entity_types:
+            entity_type_set = MultiType(entity_type.indices)
 
-                if s_types not in dist_domains_relation[p]:
-                    dist_domains_relation[p][s_types] = 0
-                    dist_ranges_domain_relation[p][s_types] = {}
-                if o_types not in dist_ranges_domain_relation[p][s_types]:
-                    dist_ranges_domain_relation[p][s_types][o_types] = 0
+            # add the multi type to the distribution if it is new
+            if entity_type_set not in entity_type_distribution:
+                entity_type_distribution[entity_type_set] = 0.0
 
-                dist_domains_relation[p][s_types] += 1
-                dist_ranges_domain_relation[p][s_types][o_types] += 1
+            entity_type_distribution[entity_type_set] += 1
 
-        naive_model = KBModelM1(type_hierarchy, prop_hierarchy, domains, ranges, count_entities, count_relations,
-                                count_facts, count_types,
-                                dist_types, dist_relations, dist_domains_relation, dist_ranges_domain_relation,
-                                rels_dict, types_dict)
+        logger.info("Learning relations distributions...")
+        # the distribution of facts over relations (object properties)
+        # dictionary pointing from the id of an object property (relation) to the number of edges that exist for that
+        # relation
+        relation_distribution = {relation_id: relation_adjaceny_matrices[relation_id].nnz
+                                 for relation_id in range(len(relation_adjaceny_matrices))}
+
+        # the distribution of subject entity types given the relation (object property)
+        # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
+        # every relation
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # number of occurrences of that subject's multi type
+        relation_domain_distribution = {}
+
+        # the distribution of object entity types given relation and subject entity type
+        # the number of times that a multi types occurs in a relation as an object for every relation and for every
+        # subject's multi type (i.e., the number of occurrences for a specific relation with a specific subject's entity
+        # type)
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
+        relation_range_distribution = {}
+
+        for relation_id in range(len(relation_adjaceny_matrices)):
+            # create empty inner dictionaries for the current relation
+            relation_domain_distribution[relation_id] = {}
+            relation_range_distribution[relation_id] = {}
+
+            # iterate over all non-zero fields of the adjacency matrix
+            # iterate over all edges that exist for the current relation
+            for index in range(relation_adjaceny_matrices[relation_id].nnz):
+                # get subject and object id from the adjacency matrix
+                subject_id = relation_adjaceny_matrices[relation_id].row[index]
+                object_id = relation_adjaceny_matrices[relation_id].col[index]
+                # create multi types from the two sets of entity types for each the subject and the object
+                subject_multi_type = MultiType(entity_types[subject_id].indices)
+                object_multi_type = MultiType(entity_types[object_id].indices)
+
+                # if the subject's multi type is not known add it to the relation domain distribution and create an
+                # empty relation range distribution for that multi type
+                if subject_multi_type not in relation_domain_distribution[relation_id]:
+                    relation_domain_distribution[relation_id][subject_multi_type] = 0
+                    relation_range_distribution[relation_id][subject_multi_type] = {}
+
+                # if the object's multi type is not known add it to the relation range distribution of the subject's
+                # multi type
+                if object_multi_type not in relation_range_distribution[relation_id][subject_multi_type]:
+                    relation_range_distribution[relation_id][subject_multi_type][object_multi_type] = 0
+
+                # increment the number of occurrences of the subject's multi type in the relation domain distribution
+                relation_domain_distribution[relation_id][subject_multi_type] += 1
+                # increment the number of occurrences of the object's multi type in the relation range distribution
+                # of the subject's multi type
+                relation_range_distribution[relation_id][subject_multi_type][object_multi_type] += 1
+
+        naive_model = KBModelM1(
+            entity_type_hierarchy=entity_type_hierarchy,
+            object_property_hierarchy=object_property_hierarchy,
+            domains=domains,
+            ranges=ranges,
+            entity_count=count_entities,
+            relation_count=count_relations,
+            edge_count=count_facts,
+            entity_type_count=count_types,
+            entity_type_distribution=entity_type_distribution,
+            relation_distribution=relation_distribution,
+            relation_domain_distribution=relation_domain_distribution,
+            relation_range_distribution=relation_range_distribution,
+            relation_to_id=relation_to_id,
+            entity_type_to_id=entity_type_to_id
+        )
 
         return naive_model

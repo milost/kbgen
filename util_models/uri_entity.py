@@ -4,9 +4,9 @@ from rdflib import URIRef
 class URIEntity(object):
     prefix = "http://dws.uni-mannheim.de/synthesized/Entity_"
 
-    def __init__(self, r):
-        self.uri = URIRef(self.prefix + str(r))
-        self.id = r
+    def __init__(self, entity_id):
+        self.uri = URIRef(self.prefix + str(entity_id))
+        self.id = entity_id
 
     def __eq__(self, other):
         return isinstance(other,self.__class__) and self.id == other.id

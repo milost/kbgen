@@ -24,7 +24,7 @@ def main():
     model = pickle.load(open(args.input, "rb"))
 
     # synthesize graph using the model
-    graph = model.synthesize(size=args.size, ne=args.nentities, nf=args.nfacts, debug=args.debug)
+    graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
 
     # serialize the generated graph and write it to a .tsv file
     rdf_format = args.output[args.output.rindex(".") + 1:]

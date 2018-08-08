@@ -1,5 +1,8 @@
 import re
 from math import nan
+from typing import Dict
+
+from rdflib import URIRef
 
 from rules import Literal, Rule
 
@@ -18,7 +21,7 @@ class RuleStats(Rule):
         self.pca_conf_est = pca_conf_est
 
     @staticmethod
-    def parse_amie(line, rel_dict):
+    def parse_amie(line: str, relation_to_id: Dict[URIRef, int]):
         cells = line.split("\t")
         rule_string = cells[0]
         head_cov = float(cells[1].strip())
@@ -43,14 +46,14 @@ class RuleStats(Rule):
 
         antecedents = []
         for ant in ant_string.split("|"):
-            lit = Literal.parse_amie(ant, rel_dict)
+            lit = Literal.parse_amie(ant, relation_to_id)
             if lit is None:
                 return None
             antecedents.append(lit)
 
         consequents = []
         for con in con_string.split("|"):
-            lit = Literal.parse_amie(con, rel_dict)
+            lit = Literal.parse_amie(con, relation_to_id)
             if lit is None:
                 return None
             consequents.append(lit)

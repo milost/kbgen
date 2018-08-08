@@ -57,8 +57,9 @@ def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
     assert isinstance(m2_model, KBModelM2)
 
     assert isinstance(m2_model, KBModelM2)
-    rel_dict = m2_model.rel_dict  # TODO: what is this
-    rules = RuleSet.parse_amie(rule_file, rel_dict)
+    # dictionary pointing from the relations (entities) to their ids
+    relation_to_id = m2_model.relation_to_id
+    rules = RuleSet.parse_amie(rule_file, relation_to_id)
 
     model = KBModelM3(m2_model, rules)
     return model, f"{output_name}-M3.pkl"

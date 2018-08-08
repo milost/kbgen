@@ -38,19 +38,19 @@ class KBModelEMi(KBModelM1):
         else:
             return super(KBModelEMi, self).select_instance(n)
 
-    def select_subject_model(self, r, domains):
-        if hasattr(self, "inv_functionalities") and self.inv_functionalities[r] == 1:
+    def select_subject_model(self, relation_id, relation_domain):
+        if hasattr(self, "inv_functionalities") and self.inv_functionalities[relation_id] == 1:
             return None
-        if domains in self.dist_subjects[r]:
-            return self.dist_subjects[r][domains]
+        if relation_domain in self.dist_subjects[relation_id]:
+            return self.dist_subjects[relation_id][relation_domain]
         else:
             return None
 
-    def select_object_model(self, r, domains, ranges):
-        if hasattr(self, "functionalities") and self.functionalities[r] == 1:
+    def select_object_model(self, relation_id, relation_domain, relation_range):
+        if hasattr(self, "functionalities") and self.functionalities[relation_id] == 1:
             return None
-        if ranges in self.dist_objects[r]:
-            return self.dist_objects[r][ranges]
+        if relation_range in self.dist_objects[relation_id]:
+            return self.dist_objects[relation_id][relation_range]
         else:
             return None
 
@@ -94,7 +94,7 @@ class KBModelEMi(KBModelM1):
         return best_model
 
     @staticmethod
-    def generate_from_tensor(model, input_path, debug=False):
+    def generate_from_tensor(model: KBModelM1, input_path: str, debug: bool = False) -> 'KBModelEMi':
         X = loadGraphNpz(input_path)
         types = loadTypesNpz(input_path).tocsr()
         n_relations = len(X)
@@ -105,7 +105,7 @@ class KBModelEMi(KBModelM1):
 
         for r in range(n_relations):
             slice = X[r]
-            model.dist_types
+            model.entity_type_distribution
             s_sum = {}
             o_sum = {}
 
@@ -116,14 +116,14 @@ class KBModelEMi(KBModelM1):
 
             for s, count in s_sum.items():
                 s_types = MultiType(types[s].indices)
-                assert s_types in model.dist_types
+                assert s_types in model.entity_type_distribution
                 if s_types not in dist_subjects[r]:
                     dist_subjects[r][s_types] = []
                 dist_subjects[r][s_types].append(count)
 
             for o, count in o_sum.items():
                 o_types = MultiType(types[o].indices)
-                assert o_types in model.dist_types
+                assert o_types in model.entity_type_distribution
                 if o_types not in dist_objects[r]:
                     dist_objects[r][o_types] = []
                 dist_objects[r][o_types].append(count)
@@ -139,5 +139,5 @@ class KBModelEMi(KBModelM1):
 
         return KBModelEMi(model, models_subjects, models_objects)
 
-    def synthesize(self, size=1.0, ne=None, nf=None, debug=False, pca=True):
-        return self.base_model.synthesize(size, ne, nf, debug, pca)
+    def synthesize(self, size=1.0, number_of_entities=None, number_of_edges=None, debug=False, pca=True):
+        return self.base_model.synthesize(size, number_of_entities, number_of_edges, debug, pca)
