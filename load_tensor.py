@@ -214,26 +214,26 @@ def main():
     entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
 
     # DAG of the entity type/class hierarchy
-    type_hierarchy = get_type_dag(graph, entity_type_to_id)
+    entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
     # DAG of the object property hierarchy
-    prop_hierarchy = get_prop_dag(graph, property_to_id)
+    object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
 
     # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling the
     # graph
-    for entity_type_id, entity_type_dag_node in type_hierarchy.items():
+    for entity_type_id, entity_type_dag_node in entity_type_hierarchy_dag.items():
         entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
         entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
 
     # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
     # graph
-    for property_id, property_dag_node in prop_hierarchy.items():
+    for property_id, property_dag_node in object_property_hierarchy_dag.items():
         property_dag_node.children = [child.node_id for child in property_dag_node.children]
         property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
 
     num_entity_types = len(entity_type_to_id or {})
-    num_entity_types_in_hierarchy = len(type_hierarchy or {})
+    num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
     num_object_properties = len(entity_type_to_id or {})
-    num_object_properties_in_hierarchy = len(prop_hierarchy or {})
+    num_object_properties_in_hierarchy = len(object_property_hierarchy_dag or {})
 
     print(f"Loaded {num_entity_types} entity types, of which {num_entity_types_in_hierarchy} are contained in the "
           f"hierarchy graph...")
@@ -248,8 +248,8 @@ def main():
     print(f"Loaded {len(ranges)} relation ranges...")
 
     # TODO: don't know what this is for
-    rdfs = {"type_hierarchy": type_hierarchy,
-            "prop_hierarchy": prop_hierarchy,
+    rdfs = {"type_hierarchy": entity_type_hierarchy_dag,
+            "prop_hierarchy": object_property_hierarchy_dag,
             "domains": domains,
             "ranges": ranges}
 
@@ -260,8 +260,8 @@ def main():
              entities_dict=entity_to_id,
              relations_dict=property_to_id,
              types_dict=entity_type_to_id,
-             type_hierarchy=type_hierarchy,
-             prop_hierarchy=prop_hierarchy,
+             type_hierarchy=entity_type_hierarchy_dag,
+             prop_hierarchy=object_property_hierarchy_dag,
              domains=domains,
              ranges=ranges)
 
