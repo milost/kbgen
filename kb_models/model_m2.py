@@ -1,3 +1,5 @@
+from typing import Dict
+
 from load_tensor_tools import loadGraphNpz
 from kb_models.model_m1 import KBModelM1
 from rdflib import Graph
@@ -17,8 +19,24 @@ class KBModelM2(KBModelM1):
      each relation. Whenever a fact is generated the subject and the object are removed from their repective pools.
     """
 
-    def __init__(self, naive_model, functionalities, inv_functionalities, rel_densities, \
-                 rel_distinct_subjs, rel_distinct_objs, reflexiveness):
+    def __init__(self,
+                 naive_model: KBModelM1,
+                 functionalities: Dict[int, float],
+                 inv_functionalities: Dict[int, float],
+                 rel_densities: Dict[int, float],
+                 rel_distinct_subjs: Dict[int, int],
+                 rel_distinct_objs: Dict[int, int],
+                 reflexiveness: Dict[int, bool]):
+        """
+        Creates an M2 model with the passed data.
+        :param naive_model: the previously built M1 model (on the same data)
+        :param functionalities:
+        :param inv_functionalities:
+        :param rel_densities:
+        :param rel_distinct_subjs:
+        :param rel_distinct_objs:
+        :param reflexiveness:
+        """
         assert type(naive_model) == KBModelM1
         for k, v in naive_model.__dict__.items():
             self.__dict__[k] = v
@@ -172,26 +190,92 @@ class KBModelM2(KBModelM1):
         pass
 
     @staticmethod
-    def generate_from_tensor(naive_model, input_path, debug=False):
-        X = loadGraphNpz(input_path)
+    def generate_from_tensor(naive_model: KBModelM1, input_path: str, debug=False) -> 'KBModelM2':
+        """
+        Generates an M2 model from the specified tensor file and M1 model.
+        :param naive_model: the previously generated M1 model
+        :param input_path: path to the numpy tensor file
+        :param debug: boolean indicating if the logging level is on debug
+        :return: an M2 model generated from the tensor file and M1 model
+        """
+        # the list of adjacency matrices of the object property relations created in load_tensor
+        relation_adjaceny_matrices = loadGraphNpz(input_path)
 
+        # dictionary pointing from a relation id to the functionality score
+        # this functionality says how often an entity, that appears as subject with this relation, has this relation
+        # on average (as subject)
+        # Therefore the lowest score would be 1.0 and the highest score would be the number of objects that
+        # have this relation
         functionalities = {}
-        inv_functionalities = {}
-        reflexiveness = {}
-        rel_densities = {}
-        rel_distinct_subjs = {}
-        rel_distinct_objs = {}
-        for p in range(len(X)):
-            obj_per_subj = csr_matrix(X[p].sum(axis=1))
-            subj_per_obj = csr_matrix(X[p].sum(axis=0))
-            functionalities[p] = float(obj_per_subj.sum()) / obj_per_subj.nnz
-            inv_functionalities[p] = float(subj_per_obj.sum()) / subj_per_obj.nnz
-            reflexiveness[p] = X[p].diagonal().any()
-            rel_distinct_subjs[p] = obj_per_subj.nnz
-            rel_distinct_objs[p] = subj_per_obj.nnz
-            rel_densities[p] = float(X[p].nnz) / (rel_distinct_subjs[p] * rel_distinct_objs[p])
 
-        owl_model = KBModelM2(naive_model, functionalities, inv_functionalities, rel_densities, \
-                              rel_distinct_subjs, rel_distinct_objs, reflexiveness)
+        # dictionary pointing from a relation id to the inverse functionality score
+        # this inverse functionality says how often an entity, that appears as object with this relation, has this
+        # relation on average (as object)
+        # Therefore the lowest score would be 1.0 and the highest score would be the number of objects that have this
+        # relation
+        inverse_functionalities = {}
+
+        # dictionary pointing from a relation id to a boolean indicating if this relation has any reflexive edges
+        relation_id_to_reflexiveness = {}
+
+        # dictionary pointing from a relation id to its density
+        # the density says how clustered the edges are around specific nodes
+        # the lowest possible density is sqrt(num_edges_of_relation_type) and it means that every edge is between
+        # a different subject and object than the other edges, i.e. an entity can appear only once as subject and once
+        # as object for this relation type
+        # the highest possible density is 1.0 and it means that the edges of this relation type have the minimum amount
+        # of entities as subjects and objects (e.g., we have 1000 relations they start at 1 entity (subject) and go to
+        # 1000 other entities (objects)
+        relation_id_to_density = {}
+
+        # dictionary pointing from relation id to a count of how many different subjects appear with this relation
+        relation_id_to_distinct_subjects = {}
+
+        # dictionary pointing from relation id to a count of how many different objects appear with this relation
+        relation_id_to_distinct_objects = {}
+
+        # iterate over the adjacency matrix of each relation type
+        # the index of each matrix is the id of the relation type
+        # the rows of each matrix contain the ids of the subject of the relation
+        # the columns of each matrix contain the ids of the object of the relation
+        for relation_id, adjacency_matrix in enumerate(relation_adjaceny_matrices):
+            # how often an entity id appears as subject in a relation
+            # axis = 1 sums the row values
+            subject_frequencies = csr_matrix(adjacency_matrix.sum(axis=1))
+
+            # how often an entity id appears as object in a relation
+            # axis = 0 sums the column values
+            object_frequencies = csr_matrix(adjacency_matrix.sum(axis=0))
+
+            # the number of different (distinct) entities that appear as subject/object
+            num_distinct_subjects = subject_frequencies.nnz
+            num_distinct_objects = object_frequencies.nnz
+            relation_id_to_distinct_subjects[relation_id] = num_distinct_subjects
+            relation_id_to_distinct_objects[relation_id] = num_distinct_objects
+
+            # the number of edges of this relation type divided by the
+            relation_id_to_density[relation_id] = float(adjacency_matrix.nnz) / (num_distinct_subjects * num_distinct_objects)
+
+            # the total number of relations divided by the number of different entities that appear as subject
+            # the result is how often an entity that appears as subject actually appears as subject
+            # a score of 2 for the relation "has car" would mean that an entity that has a relation "has car" has on
+            # average two cars
+            # a score of 1 means that every subject that appears in this relation has this relation exactly once
+            functionalities[relation_id] = float(subject_frequencies.sum()) / num_distinct_subjects
+
+            # the total number of relations divided by the number of different entities that appear as object
+            inverse_functionalities[relation_id] = float(object_frequencies.sum()) / num_distinct_objects
+
+            # True if any reflexive edge exists in the adjacency matrix
+            relation_id_to_reflexiveness[relation_id] = adjacency_matrix.diagonal().any()
+
+        owl_model = KBModelM2(
+            naive_model=naive_model,
+            functionalities=functionalities,
+            inv_functionalities=inverse_functionalities,
+            rel_densities=relation_id_to_density,
+            rel_distinct_subjs=relation_id_to_distinct_subjects,
+            rel_distinct_objs=relation_id_to_distinct_objects,
+            reflexiveness=relation_id_to_reflexiveness)
 
         return owl_model
