@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 from load_tensor_tools import loadGraphNpz
 from kb_models.model_m1 import KBModelM1
@@ -89,6 +89,33 @@ class KBModelM2(KBModelM1):
         self.logger.debug(f"violate func: {self.count_violate_functionality_facts}")
         self.logger.debug(f"violate invfunc: {self.count_violate_inv_functionality_facts}")
         self.logger.debug(f"violate nonreflex: {self.num_facts_violating_non_reflexiveness}")
+
+    def check_for_quadratic_relations(self) -> List[int]:
+        """
+        A relation type is quadratic when both its functionality score (average number of outgoing edges) and inverse
+        functionality score (average number of ingoing edges) are larger than 10 and its density is larger than 0.1.
+        TODO: what meaning does this selection have
+        :return: list of relation ids of which each is a quadratic relation
+        """
+        quadratic_relations = []
+        for relation_id in self.relation_id_to_density.keys():
+            functionality = self.functionalities[relation_id]
+            inverse_functionality = self.inverse_functionalities[relation_id]
+            if functionality > 10 and inverse_functionality > 10:
+                density = self.relation_id_to_density[relation_id]
+                num_distinct_objects = self.relation_id_to_distinct_objects[relation_id]
+                num_distinct_subjects = self.relation_id_to_distinct_subjects[relation_id]
+                is_reflexive = self.relation_id_to_reflexiveness[relation_id]
+
+                if density > 0.1:
+                    self.logger.debug(f"relation {relation_id}: functionality={functionality}, "
+                                      f"inverse_functionality={inverse_functionality}, "
+                                      f"density={density}, "
+                                      f"num_distinct_objects={num_distinct_objects}, "
+                                      f"num_distinct_subjects={num_distinct_subjects}, "
+                                      f"is_reflexive={is_reflexive}")
+                    quadratic_relations.append(relation_id)
+        return quadratic_relations
 
     def valid_functionality(self, graph: Graph, fact: Tuple[str, str, str]) -> bool:
         """

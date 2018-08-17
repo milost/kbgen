@@ -133,37 +133,27 @@ class KBModelM1(KBModel):
         self.logger.debug(f"{self.fact_count} facts added")
         self.logger.debug(f"{self.duplicate_fact_count} of those already existed")
 
-    def check_for_quadratic_relations(self):
+    def check_for_quadratic_relations(self) -> List[int]:
         """
-        TODO: this is only called in the m2 and m3 model since there the missing instance variables are defined.
-        :return:
+        This check is only done properly in the M2 and M3 model, since measures are used that are only defined there.
+        Therefore, this method is only a placeholder and returns an empty list.
+        :return: a list of relation ids, each of which is a quadratic relation
         """
-        quadratic_relations = []
-        for r in self.relation_id_to_density.keys():
-            func = self.functionalities[r]
-            inv_func = self.inverse_functionalities[r]
-            if func > 10 and inv_func > 10:
-                density = self.relation_id_to_density[r]
-                n_obj = self.relation_id_to_distinct_objects[r]
-                n_subj = self.relation_id_to_distinct_subjects[r]
-                reflex = self.relation_id_to_reflexiveness[r]
+        return []
 
-                if density > 0.1:
-                    self.logger.debug(f"relation {r}: func={func}, inv_func={inv_func}, density={density}, "
-                                      f"n_obj={n_obj}, n_subj={n_subj}, eflex={reflex}")
-                    quadratic_relations.append(r)
-        return quadratic_relations
-
-    def adjust_quadratic_relation_distributions(self, relation_distribution: Dict[int, float], quadratic_relations):
+    def adjust_quadratic_relation_distributions(self,
+                                                relation_distribution: Dict[int, float],
+                                                quadratic_relations: List[int]) -> Dict[int, float]:
         """
-        TODO
+        The number of occurrences of the passed quadratic relations is scaled with the size parameter of the synthesized
+        knowledge base (i.e., num_occurrences = num_occurrences * size).
+        TODO: why is this done
         :param relation_distribution: the distribution of the relations. A dictionary pointing from relation ids to
                                       the number of occurrences of that relation type
-        :param quadratic_relations: TODO
-        :return: TODO
+        :param quadratic_relations: a list of relation ids of which each relation is a quadratic relation
+        :return: the relation distribution with the adjusted occurrences of the quadratic relations
         """
         self.logger.debug(f"Adjusting distribution because of quadratic relations {quadratic_relations}")
-        # TODO why are quadratic relations scaled by the knowledge base scale (i.e., * size)
         for relation_id in quadratic_relations:
             relation_distribution[relation_id] = relation_distribution[relation_id] / self.step
         return relation_distribution
