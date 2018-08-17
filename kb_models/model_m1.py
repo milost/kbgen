@@ -127,6 +127,9 @@ class KBModelM1(KBModel):
                                          for parent in property_dag_node.parents]
 
     def print_synthesis_details(self) -> None:
+        """
+        Print the statistics of the synthesization of a knowledge base with this M1 model.
+        """
         self.logger.debug(f"{self.fact_count} facts added")
         self.logger.debug(f"{self.duplicate_fact_count} of those already existed")
 
@@ -136,14 +139,14 @@ class KBModelM1(KBModel):
         :return:
         """
         quadratic_relations = []
-        for r in self.rel_densities.keys():
+        for r in self.relation_id_to_density.keys():
             func = self.functionalities[r]
-            inv_func = self.inv_functionalities[r]
+            inv_func = self.inverse_functionalities[r]
             if func > 10 and inv_func > 10:
-                density = self.rel_densities[r]
-                n_obj = self.rel_distinct_objs[r]
-                n_subj = self.rel_distinct_subjs[r]
-                reflex = self.reflexiveness[r]
+                density = self.relation_id_to_density[r]
+                n_obj = self.relation_id_to_distinct_objects[r]
+                n_subj = self.relation_id_to_distinct_subjects[r]
+                reflex = self.relation_id_to_reflexiveness[r]
 
                 if density > 0.1:
                     self.logger.debug(f"relation {r}: func={func}, inv_func={inv_func}, density={density}, "
@@ -170,7 +173,7 @@ class KBModelM1(KBModel):
         Add a fact (triple) to the graph. Afterwards check if this fact was not previously generated or if it was
         already known and increment the appropriate counters.
         :param graph: the synthesized graph object
-        :param fact: triple containing the entity and relation ids of subject, relation and object
+        :param fact: triple of subject, relation, object
         :return: boolean indicating if the fact was a new fact
         """
         graph_size = len(graph)
@@ -489,10 +492,12 @@ class KBModelM1(KBModel):
         # start delta used for time logging
         self.start_t = datetime.datetime.now()
 
-        # repeat until enough facts were generated
+        # repeat until enough facts are generated
         while self.fact_count < num_synthetic_facts:
             # choose a random relation type according to the relation distribution
-            relation_id = choice(list(self.relation_distribution.keys()), replace=True, p=relation_distribution)
+            relation_id = choice(list(self.relation_distribution.keys()),
+                                 replace=True,
+                                 p=list(relation_distribution.values()))
             if relation_id in self.relation_distribution.keys():
                 # relation_id = self.dist_relations.keys().index(rel_uri)
                 # relation_id = i
@@ -507,7 +512,7 @@ class KBModelM1(KBModel):
 
                 # select random range of the valid ranges for the selected domain according to the range distribution
                 # a range is a multi type
-                relation_range = choice(self.relation_range_distribution[relation_id][relation_domain].keys(),
+                relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
                                         p=relation_range_distribution[relation_id][relation_domain])
 
                 # the number of synthetic entities with the multi type of the selected range
@@ -530,11 +535,11 @@ class KBModelM1(KBModel):
                     object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
 
                     # create fact with the ids of the entities and add it to the graph
-                    relation_id = URIRelation(relation_id).uri
-                    subject_od = URIEntity(subject_entity).uri
-                    object_id = URIEntity(object_entity).uri
+                    rdf_relation = URIRelation(relation_id).uri
+                    rdf_subject = URIEntity(subject_entity).uri
+                    rdf_object = URIEntity(object_entity).uri
 
-                    fact = (subject_od, relation_id, object_id)
+                    fact = (rdf_subject, rdf_relation, rdf_object)
 
                     self.add_fact(graph, fact)
         return graph
