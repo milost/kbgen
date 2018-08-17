@@ -78,7 +78,11 @@ class KBModelM2(KBModelM1):
 
         # initialized in other methods
         #
-        # the number of facts that violate the non reflexiveness by being reflexive
+        # the number of facts that violated the functionality of 1 of a relation type
+        self.num_facts_violating_functionality = 0
+        # the number of facts that violated the inverse functionality of 1 of a relation type
+        self.num_facts_violating_inverse_functionality = 0
+        # the number of facts that violated the non reflexiveness by being reflexive
         self.num_facts_violating_non_reflexiveness = 0
 
     def print_synthesis_details(self):
@@ -86,15 +90,15 @@ class KBModelM2(KBModelM1):
         Print the statistics of the synthesization of a knowledge base with this M2 model.
         """
         super(KBModelM2, self).print_synthesis_details()
-        self.logger.debug(f"violate func: {self.count_violate_functionality_facts}")
-        self.logger.debug(f"violate invfunc: {self.count_violate_inv_functionality_facts}")
-        self.logger.debug(f"violate nonreflex: {self.num_facts_violating_non_reflexiveness}")
+        self.logger.debug(f"{self.num_facts_violating_functionality} facts violated functionality")
+        self.logger.debug(f"{self.num_facts_violating_inverse_functionality} facts violated inverse functionality")
+        self.logger.debug(f"{self.num_facts_violating_non_reflexiveness} facts violated non-reflexiveness")
 
     def check_for_quadratic_relations(self) -> List[int]:
         """
         A relation type is quadratic when both its functionality score (average number of outgoing edges) and inverse
         functionality score (average number of ingoing edges) are larger than 10 and its density is larger than 0.1.
-        TODO: what meaning does this selection have
+        TODO: what is the meaning of this selection
         :return: list of relation ids of which each is a quadratic relation
         """
         quadratic_relations = []
@@ -119,31 +123,39 @@ class KBModelM2(KBModelM1):
 
     def valid_functionality(self, graph: Graph, fact: Tuple[str, str, str]) -> bool:
         """
-        Validates the functionality by iterating over the triples in the graph that have TODO
+        Test the validity of the new fact in regards to the functionality of the fact's relation type. This method is
+        only called if the functionality of the relation type equals 1, which means that an entity can only have one
+        outgoing edge of the relation type (i.e., be the subject in only one fact of the relation type).
+        It is tested if the subject of the new fact already has a relation of the relation type to a different entity.
+        Returns True if the fact is valid, i.e. no such relation to a different object already exists, and False if it
+        is not valid.
         :param graph: the synthesized graph object
         :param fact: triple of subject, relation, object
-        :return: boolean indicating TODO
+        :return: boolean indicating the validity of the new fact, i.e. False if another fact with the same subject and
+                 predicate already exists
         """
-        try:
-            graph.triples((fact[0], fact[1], None)).next()
-            self.count_violate_functionality_facts += 1
-            return False
-        except StopIteration:
-            return True
+        similar_relation_exists = (fact[0], fact[1], None) in graph
+        # increment the counter if a similar fact already exists (True -> +1, False -> +0)
+        self.num_facts_violating_functionality += similar_relation_exists
+        return not similar_relation_exists
 
     def valid_inverse_functionality(self, graph: Graph, fact: Tuple[str, str, str]) -> bool:
         """
-        Validates the inverse functionality by iterating over the triples in the graph that have TODO
+        Test the validity of the new fact in regards to the inverse functionality of the fact's relation type. This
+        method is only called if the inverse functionality of the relation type equals 1, which means that an entity can
+        only have one incoming edge of the relation type (i.e., be the object in only one fact of the relation type).
+        It is tested if the object of the new fact already has a relation of the relation type to a different entity.
+        Returns True if the fact is valid, i.e. no such relation to a different subject already exists, and False if it
+        is not valid.
         :param graph: the synthesized graph object
         :param fact: triple of subject, relation, object
-        :return: boolean indicating TODO
+        :return: boolean indicating the validity of the new fact, i.e. False if another fact with the same predicate and
+                 object already exists
         """
-        try:
-            graph.triples((None, fact[1], fact[2])).next()
-            self.count_violate_inv_functionality_facts += 1
-            return False
-        except StopIteration:
-            return True
+        similar_relation_exists = (None, fact[1], fact[2]) in graph
+        # increment the counter if a similar fact already exists (True -> +1, False -> +0)
+        self.num_facts_violating_inverse_functionality += similar_relation_exists
+        return not similar_relation_exists
 
     def valid_reflexiveness(self, fact: Tuple[str, str, str]) -> bool:
         """
@@ -289,10 +301,11 @@ class KBModelM2(KBModelM1):
         # counter of duplicate facts that were generated
         self.duplicate_fact_count = 0
 
-        # TODO
-        self.count_violate_functionality_facts = 0
-        self.count_violate_inv_functionality_facts = 0
-        # the number of facts that violate the non reflexiveness by being reflexive
+        # the number of facts that violated the functionality of 1 of a relation type
+        self.num_facts_violating_functionality = 0
+        # the number of facts that violated the inverse functionality of 1 of a relation type
+        self.num_facts_violating_inverse_functionality = 0
+        # the number of facts that violated the non reflexiveness by being reflexive
         self.num_facts_violating_non_reflexiveness = 0
 
         self.logger.info(f"{num_synthetic_facts} facts to be synthesized")
@@ -350,14 +363,34 @@ class KBModelM2(KBModelM1):
 
                     fact = (subject_uri, relation_uri, object_uri)
 
-                    # TODO
-                    if (self.functionalities[relation_id] > 1 or self.valid_functionality(graph, fact)) and \
-                            (self.inverse_functionalities[relation_id] > 1 or self.valid_inverse_functionality(graph, fact)) and \
-                            (self.relation_id_to_reflexiveness[relation_id] or self.valid_reflexiveness(fact)):
+                    # if the functionality score is larger than one, an entity can have more than one outgoing edge
+                    # of this relation type. If the score equals one, test if the subject entity already has an
+                    # outgoing edge of this relation type
+                    # True if the relation type allows more than one outgoing edge for an entity or if the entity has no
+                    # outgoing edges of this relation type yet
+                    valid_functionality = self.functionalities[relation_id] > 1 or self.valid_functionality(graph, fact)
+
+                    # if the inverse functionality score is larger than one, an entity can have more than one incoming
+                    # edge of this relation type. If the score equals one, test if the object entity already has an
+                    # incoming edge of this relation type
+                    # True if the relation type allows more than one incoming edge for an entity or if the entity has no
+                    # incoming edges of this relation type yet
+                    valid_inverse_functionality = (self.inverse_functionalities[relation_id] > 1 or
+                                                   self.valid_inverse_functionality(graph, fact))
+
+                    # if the relation does not allow reflexive edges, the method "valid_reflexiveness()" is called,
+                    # which tests if the edge is reflexive
+                    # True if the relation allows reflexiveness or if it doesn't and the edge is not reflexive
+                    valid_reflexiveness = (self.relation_id_to_reflexiveness[relation_id] or
+                                           self.valid_reflexiveness(fact))
+
+                    # add the new fact to the graph, if it does not violate the constraints of functionality, inverse
+                    # functionality and reflexiveness
+                    if valid_functionality and valid_inverse_functionality and valid_reflexiveness:
                         self.add_fact(graph, fact)
 
         self.print_synthesis_details()
-        self.logger.info("synthesized facts = %d from %d" % (self.fact_count, num_synthetic_facts))
+        self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
         return graph
 
     @staticmethod

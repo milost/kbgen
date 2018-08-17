@@ -532,6 +532,9 @@ class KBModelM1(KBModel):
                     fact = (rdf_subject, rdf_relation, rdf_object)
 
                     self.add_fact(graph, fact)
+
+        self.print_synthesis_details()
+        self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
         return graph
 
     @staticmethod
