@@ -3,13 +3,7 @@ from typing import Dict, Tuple, List
 from load_tensor_tools import loadGraphNpz
 from kb_models.model_m1 import KBModelM1
 from rdflib import Graph
-from numpy.random import choice
-from util_models import URIEntity, URIRelation
-from util import normalize, create_logger
-import logging
 from scipy.sparse import csr_matrix
-import tqdm
-import datetime
 
 
 class KBModelM2(KBModelM1):
@@ -20,7 +14,7 @@ class KBModelM2(KBModelM1):
     """
 
     def __init__(self,
-                 naive_model: KBModelM1,
+                 m1_model: KBModelM1,
                  functionalities: Dict[int, float],
                  inverse_functionalities: Dict[int, float],
                  relation_id_to_density: Dict[int, float],
@@ -29,7 +23,7 @@ class KBModelM2(KBModelM1):
                  relation_id_to_reflexiveness: Dict[int, bool]):
         """
         Creates an M2 model with the passed data.
-        :param naive_model: the previously built M1 model (on the same data)
+        :param m1_model: the previously built M1 model (on the same data)
         :param functionalities: points from relation id to the functionality score of this relation type. This score
                                 is the average number of outgoing edges an entity has, given that it has any outgoing
                                 edges of this relation type
@@ -47,26 +41,26 @@ class KBModelM2(KBModelM1):
         :param relation_id_to_reflexiveness: points from relation id to a boolean indicating if any reflexive edge of
                                              that relation type exists
         """
-        assert type(naive_model) == KBModelM1
+        assert type(m1_model) == KBModelM1
         # initialize the M1 model data with the values of the passed M1 model
         # TODO does the init call have side-effects that the __dict__ way does not have
         # for k, v in naive_model.__dict__.items():
         #     self.__dict__[k] = v
         super(KBModelM2, self).__init__(
-            entity_type_hierarchy=naive_model.entity_type_hierarchy,
-            object_property_hierarchy=naive_model.object_property_hierarchy,
-            domains=naive_model.domains,
-            ranges=naive_model.ranges,
-            entity_count=naive_model.entity_count,
-            relation_count=naive_model.relation_count,
-            edge_count=naive_model.edge_count,
-            entity_type_count=naive_model.entity_type_count,
-            entity_type_distribution=naive_model.entity_type_distribution,
-            relation_distribution=naive_model.relation_distribution,
-            relation_domain_distribution=naive_model.relation_domain_distribution,
-            relation_range_distribution=naive_model.relation_range_distribution,
-            relation_to_id=naive_model.relation_to_id,
-            entity_type_to_id=naive_model.entity_type_to_id
+            entity_type_hierarchy=m1_model.entity_type_hierarchy,
+            object_property_hierarchy=m1_model.object_property_hierarchy,
+            domains=m1_model.domains,
+            ranges=m1_model.ranges,
+            entity_count=m1_model.entity_count,
+            relation_count=m1_model.relation_count,
+            edge_count=m1_model.edge_count,
+            entity_type_count=m1_model.entity_type_count,
+            entity_type_distribution=m1_model.entity_type_distribution,
+            relation_distribution=m1_model.relation_distribution,
+            relation_domain_distribution=m1_model.relation_domain_distribution,
+            relation_range_distribution=m1_model.relation_range_distribution,
+            relation_to_id=m1_model.relation_to_id,
+            entity_type_to_id=m1_model.entity_type_to_id
         )
 
         self.functionalities = functionalities
@@ -75,6 +69,8 @@ class KBModelM2(KBModelM1):
         self.relation_id_to_distinct_subjects = relation_id_to_distinct_subjects
         self.relation_id_to_distinct_objects = relation_id_to_distinct_objects
         self.relation_id_to_reflexiveness = relation_id_to_reflexiveness
+
+        self.name = "M2 (OWL)"
 
         # initialized in other methods
         #
@@ -198,200 +194,31 @@ class KBModelM2(KBModelM1):
                             invfunc_rels_subj_pool[r] = invfunc_rels_subj_pool[r].union(set(self.entity_types_to_entity_ids[range]))
         return invfunc_rels_subj_pool
 
-    def synthesize(self,
-                   size: int = 1,
-                   number_of_entities: int = None,
-                   number_of_edges: int = None,
-                   debug: bool = False,
-                   pca: bool = True) -> Graph:
-        """
-        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
-        entities and edges.
-        :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
-                     the model was trained on, 2.0 means it should have twice the size)
-        :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
-                                   will be determined by the number of entities on which the model was trained and the
-                                   size parameter
-        :param number_of_edges: the number of edges (facts) the synthesized graph should have. If not set this number
-                                will be determined by the number of edges on which the model was trained and the size
-                                parameter
-        :param debug: boolean if logging should be on debug level
-        :param pca: boolean if PCA should be used. This parameter is not used
-        :return: the synthesized graph as rdf graph object
-        """
-        print("Synthesizing OWL model...")
+    def is_fact_valid(self, graph: Graph, relation_id: int, fact: Tuple[str, str, str]):
+        # if the functionality score is larger than one, an entity can have more than one outgoing edge
+        # of this relation type. If the score equals one, test if the subject entity already has an
+        # outgoing edge of this relation type
+        # True if the relation type allows more than one outgoing edge for an entity or if the entity has no
+        # outgoing edges of this relation type yet
+        valid_functionality = self.functionalities[relation_id] > 1 or self.valid_functionality(graph, fact)
 
-        level = logging.DEBUG if debug else logging.INFO
-        self.logger = create_logger(level, name="kbgen")
-        self.synth_time_logger = create_logger(level, name="synth_time")
+        # if the inverse functionality score is larger than one, an entity can have more than one incoming
+        # edge of this relation type. If the score equals one, test if the object entity already has an
+        # incoming edge of this relation type
+        # True if the relation type allows more than one incoming edge for an entity or if the entity has no
+        # incoming edges of this relation type yet
+        valid_inverse_functionality = (self.inverse_functionalities[relation_id] > 1 or
+                                       self.valid_inverse_functionality(graph, fact))
 
-        # scale the entity and edge count by the given size
-        self.step = 1.0 / float(size)
-        num_synthetic_entities = int(self.entity_count / self.step)
-        num_synthetic_facts = int(self.edge_count / self.step)
+        # if the relation does not allow reflexive edges, the method "valid_reflexiveness()" is called,
+        # which tests if the edge is reflexive
+        # True if the relation allows reflexiveness or if it doesn't and the edge is not reflexive
+        valid_reflexiveness = (self.relation_id_to_reflexiveness[relation_id] or
+                               self.valid_reflexiveness(fact))
 
-        # overwrite dynamic sizes with static sizes if they were set
-        if number_of_entities is not None:
-            num_synthetic_entities = number_of_entities
-        if number_of_edges is not None:
-            num_synthetic_facts = number_of_edges
-
-        # the synthesized graph (initialised emtpy)
-        graph = Graph()
-
-        # TODO
-        quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(self.relation_distribution,
-                                                                                       quadratic_relations)
-        # list of the ids of the synthesized entities and relations
-        # entity_type_ids = range(self.entity_type_count)
-        relation_ids = range(self.relation_count)
-
-        # adds the triples that define the entity types as such (classes)
-        graph = self.synthesize_entity_types(graph, self.entity_type_count)
-
-        # adds the triples that define the relations as such (object properties)
-        graph = self.synthesize_relations(graph, self.relation_count)
-
-        # adds the triples that define the entity type and property type hierarchies and the property domains and ranges
-        graph = self.synthesize_schema(graph)
-
-        # add synthetic entities to the graph by adding the triples that define the type of relation for every entity
-        # synthetic entities are assigned multi types at random (via distribution) and the type of relation is added
-        # for every entity type in that multi type
-        # returns the new graph and a dictionary containing the used multi types pointing to the entity ids of the
-        # synthetic entities of that type
-        graph, entity_types_to_entity_ids = self.synthesize_entities(graph, num_synthetic_entities)
-
-        # reverse the dictionary so that every synthetic entity id points to its multi type
-        self.synthetic_id_to_type = {synthetic_entity_id: multi_type for multi_type in entity_types_to_entity_ids.keys()
-                                     for synthetic_entity_id in entity_types_to_entity_ids[multi_type]}
-        self.entity_types_to_entity_ids = entity_types_to_entity_ids
-
-        self.logger.info("Synthesizing edges/facts..")
-
-        # normalize relation distribution
-        # first sort the dictionary by the relation id (which are in [0, num_relations)) then normalize them
-        sorted_values = [occurrences for relation_id, occurrences in sorted(adjusted_relations_distribution.items())]
-        normalized_values = list(normalize(sorted_values))
-        # dictionary of relation ids pointing to their frequency (in [0, 1])
-        relation_distribution: Dict[int, float] = {}
-        # add normalized relation occurrences to the distribution dictionary
-        for relation_id in adjusted_relations_distribution.keys():
-            relation_distribution[relation_id] = normalized_values[relation_id]
-
-        # normalize relation domain distribution
-        # this is basically just copies relation_domain_distribution and replaces the occurrences with normalized values
-        relation_domain_distribution = {}
-        for relation_id in relation_ids:
-            normalized_distribution = normalize(self.relation_domain_distribution[relation_id].values())
-            relation_domain_distribution[relation_id] = normalized_distribution
-
-        # normalize relation range distribution
-        # this is basically just copies relation_range_distribution and replaces the occurrences with normalized values
-        relation_range_distribution = {}
-        for relation_id in relation_ids:
-            relation_range_distribution[relation_id] = {}
-            for relation_domain in self.relation_range_distribution[relation_id].keys():
-                relation_range_values = self.relation_range_distribution[relation_id][relation_domain].values()
-                relation_range_distribution[relation_id][relation_domain] = normalize(relation_range_values)
-
-        # counter for the number of facts in the graph
-        self.fact_count = 0
-        # counter of duplicate facts that were generated
-        self.duplicate_fact_count = 0
-
-        # the number of facts that violated the functionality of 1 of a relation type
-        self.num_facts_violating_functionality = 0
-        # the number of facts that violated the inverse functionality of 1 of a relation type
-        self.num_facts_violating_inverse_functionality = 0
-        # the number of facts that violated the non reflexiveness by being reflexive
-        self.num_facts_violating_non_reflexiveness = 0
-
-        self.logger.info(f"{num_synthetic_facts} facts to be synthesized")
-        # progress bar
-        self.progress_bar = tqdm.tqdm(total=num_synthetic_facts)
-        # start delta used for time logging
-        self.start_t = datetime.datetime.now()
-
-        # repeat until enough facts are generated
-        while self.fact_count < num_synthetic_facts:
-            # choose a random relation type according to the relation distribution
-            relation_id = choice(list(self.relation_distribution.keys()),
-                                 replace=True,
-                                 p=list(relation_distribution.values()))
-            if relation_id in self.relation_distribution.keys():
-                # rel_i = self.dist_relations.keys().index(rel_uri)
-                # rel_i = i
-
-                # select random domain of the valid domains for this relation type according to the domain distribution
-                # a domain is a multi type
-                relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
-                                         p=relation_domain_distribution[relation_id])
-
-                # the number of synthetic entities with the multi type of the selected domain
-                entity_domain_count = len(entity_types_to_entity_ids[relation_domain])
-
-                # select random range of the valid ranges for the selected domain according to the range distribution
-                # a range is a multi type
-                relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
-                                        p=relation_range_distribution[relation_id][relation_domain])
-
-                # the number of synthetic entities with the multi type of the selected range
-                entity_range_count = len(entity_types_to_entity_ids[relation_range])
-
-                # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
-                # the range
-                if entity_domain_count > 0 and entity_range_count > 0:
-                    # TODO
-                    subject_model = self.select_subject_model(relation_id, relation_domain)
-                    # TODO
-                    object_model = self.select_object_model(relation_id, relation_domain, relation_range)
-
-                    # select one of the possible entities as a subject according to the subject model
-                    possible_subject_entities = entity_types_to_entity_ids[relation_domain]
-                    subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
-
-                    # select one of the possible entities as an object according to the object model
-                    possible_object_entities = entity_types_to_entity_ids[relation_range]
-                    object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
-
-                    # create fact with the ids of the entities and add it to the graph
-                    relation_uri = URIRelation(relation_id).uri
-                    subject_uri = URIEntity(subject_entity).uri
-                    object_uri = URIEntity(object_entity).uri
-
-                    fact = (subject_uri, relation_uri, object_uri)
-
-                    # if the functionality score is larger than one, an entity can have more than one outgoing edge
-                    # of this relation type. If the score equals one, test if the subject entity already has an
-                    # outgoing edge of this relation type
-                    # True if the relation type allows more than one outgoing edge for an entity or if the entity has no
-                    # outgoing edges of this relation type yet
-                    valid_functionality = self.functionalities[relation_id] > 1 or self.valid_functionality(graph, fact)
-
-                    # if the inverse functionality score is larger than one, an entity can have more than one incoming
-                    # edge of this relation type. If the score equals one, test if the object entity already has an
-                    # incoming edge of this relation type
-                    # True if the relation type allows more than one incoming edge for an entity or if the entity has no
-                    # incoming edges of this relation type yet
-                    valid_inverse_functionality = (self.inverse_functionalities[relation_id] > 1 or
-                                                   self.valid_inverse_functionality(graph, fact))
-
-                    # if the relation does not allow reflexive edges, the method "valid_reflexiveness()" is called,
-                    # which tests if the edge is reflexive
-                    # True if the relation allows reflexiveness or if it doesn't and the edge is not reflexive
-                    valid_reflexiveness = (self.relation_id_to_reflexiveness[relation_id] or
-                                           self.valid_reflexiveness(fact))
-
-                    # add the new fact to the graph, if it does not violate the constraints of functionality, inverse
-                    # functionality and reflexiveness
-                    if valid_functionality and valid_inverse_functionality and valid_reflexiveness:
-                        self.add_fact(graph, fact)
-
-        self.print_synthesis_details()
-        self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
-        return graph
+        # add the new fact to the graph, if it does not violate the constraints of functionality, inverse
+        # functionality and reflexiveness
+        return valid_functionality and valid_inverse_functionality and valid_reflexiveness
 
     @staticmethod
     def generate_entities_stats(graph: Graph):
@@ -479,7 +306,7 @@ class KBModelM2(KBModelM1):
             relation_id_to_reflexiveness[relation_id] = adjacency_matrix.diagonal().any()
 
         owl_model = KBModelM2(
-            naive_model=naive_model,
+            m1_model=naive_model,
             functionalities=functionalities,
             inverse_functionalities=inverse_functionalities,
             relation_id_to_density=relation_id_to_density,

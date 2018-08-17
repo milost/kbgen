@@ -86,6 +86,9 @@ class KBModelM1(KBModel):
         self.object_property_hierarchy = object_property_hierarchy
         self.fix_hierarchies()
 
+        # used for logging
+        self.name = "M1 (NAIVE)"
+
         # initialized in other methods
         #
         # normal logger and logger for the synthesizing performance
@@ -351,7 +354,7 @@ class KBModelM1(KBModel):
     def select_instance(self, n, model=None):
         return randint(n)
 
-    def select_subject_model(self, relation_id: str, relation_domain: MultiType):
+    def select_subject_model(self, relation_id: int, relation_domain: MultiType):
         """
         Implemented in model_emi. Return a model that will select one of many entities of the given multi type as a
         subject for a relation.
@@ -361,7 +364,7 @@ class KBModelM1(KBModel):
         """
         return None
 
-    def select_object_model(self, relation_id: str, relation_domain: MultiType, relation_range: MultiType):
+    def select_object_model(self, relation_id: int, relation_domain: MultiType, relation_range: MultiType):
         """
         Implemented in model_emi. Return a model that will select one of many entities of the given range multi type as
         an object for a relation with a given subject multi type (the domain).
@@ -476,60 +479,52 @@ class KBModelM1(KBModel):
         return normalized_relation_range_distribution
 
     def synthesize_fact(self,
-                        normalized_relation_distribution: Dict[int, float],
+                        relation_id: int,
                         normalized_relation_domain_distribution: Dict[int, Iterable[float]],
                         normalized_relation_range_distribution: Dict[int, Dict[MultiType, Iterable[float]]]
                         ) -> Optional[Tuple[str, str, str]]:
-        # choose a random relation type according to the relation distribution
-        relation_id = choice(list(self.relation_distribution.keys()),
-                             replace=True,
-                             p=list(normalized_relation_distribution.values()))
-        if relation_id in self.relation_distribution.keys():
-            # relation_id = self.dist_relations.keys().index(rel_uri)
-            # relation_id = i
+        # select random domain of the valid domains for this relation type according to the domain distribution
+        # a domain is a multi type
+        relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
+                                 p=normalized_relation_domain_distribution[relation_id])
 
-            # select random domain of the valid domains for this relation type according to the domain distribution
-            # a domain is a multi type
-            relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
-                                     p=normalized_relation_domain_distribution[relation_id])
+        # the number of synthetic entities with the multi type of the selected domain
+        entity_domain_count = len(self.entity_types_to_entity_ids[relation_domain])
 
-            # the number of synthetic entities with the multi type of the selected domain
-            entity_domain_count = len(self.entity_types_to_entity_ids[relation_domain])
+        # select random range of the valid ranges for the selected domain according to the range distribution
+        # a range is a multi type
+        relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
+                                p=normalized_relation_range_distribution[relation_id][relation_domain])
 
-            # select random range of the valid ranges for the selected domain according to the range distribution
-            # a range is a multi type
-            relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
-                                    p=normalized_relation_range_distribution[relation_id][relation_domain])
+        # the number of synthetic entities with the multi type of the selected range
+        entity_range_count = len(self.entity_types_to_entity_ids[relation_range])
 
-            # the number of synthetic entities with the multi type of the selected range
-            entity_range_count = len(self.entity_types_to_entity_ids[relation_range])
+        # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
+        # the range
+        if entity_domain_count > 0 and entity_range_count > 0:
+            # TODO
+            subject_model = self.select_subject_model(relation_id, relation_domain)
+            # TODO
+            object_model = self.select_object_model(relation_id, relation_domain, relation_range)
 
-            # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
-            # the range
-            if entity_domain_count > 0 and entity_range_count > 0:
-                # TODO
-                subject_model = self.select_subject_model(relation_id, relation_domain)
-                # TODO
-                object_model = self.select_object_model(relation_id, relation_domain, relation_range)
+            # select one of the possible entities as a subject according to the subject model
+            possible_subject_entities = self.entity_types_to_entity_ids[relation_domain]
+            subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
 
-                # select one of the possible entities as a subject according to the subject model
-                possible_subject_entities = self.entity_types_to_entity_ids[relation_domain]
-                subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
+            # select one of the possible entities as an object according to the object model
+            possible_object_entities = self.entity_types_to_entity_ids[relation_range]
+            object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
 
-                # select one of the possible entities as an object according to the object model
-                possible_object_entities = self.entity_types_to_entity_ids[relation_range]
-                object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
+            # create fact with the ids of the entities and add it to the graph
+            rdf_relation = URIRelation(relation_id).uri
+            rdf_subject = URIEntity(subject_entity).uri
+            rdf_object = URIEntity(object_entity).uri
 
-                # create fact with the ids of the entities and add it to the graph
-                rdf_relation = URIRelation(relation_id).uri
-                rdf_subject = URIEntity(subject_entity).uri
-                rdf_object = URIEntity(object_entity).uri
+            fact = (rdf_subject, rdf_relation, rdf_object)
 
-                fact = (rdf_subject, rdf_relation, rdf_object)
+            return fact
 
-                return fact
-
-    def is_fact_valid(self, fact: Tuple[str, str, str]) -> bool:
+    def is_fact_valid(self, graph: Graph, relation_id: int, fact: Tuple[str, str, str]):
         """
         Function used to filter synthesized facts before they are added to the synthesized knowledge graph. In this M1
         Model there is no filtering and thus it is only a placeholder.
@@ -559,7 +554,7 @@ class KBModelM1(KBModel):
         :param pca: boolean if PCA should be used. This parameter is not used
         :return: the synthesized graph as rdf graph object
         """
-        print("Synthesizing NAIVE model...")
+        print(f"Synthesizing {self.name} model...")
 
         level = logging.DEBUG if debug else logging.INFO
         self.logger = create_logger(level, name="kbgen")
@@ -600,15 +595,21 @@ class KBModelM1(KBModel):
 
         # repeat until enough facts are generated
         while self.fact_count < num_synthetic_facts:
-            # synthesize a fact using the distributions of the relations and their domains and ranges
-            fact = self.synthesize_fact(
-                normalized_relation_distribution=normalized_relation_distribution,
-                normalized_relation_domain_distribution=normalized_relation_domain_distribution,
-                normalized_relation_range_distribution=normalized_relation_range_distribution
-            )
-            # test if a fact was synthesized and if it passes the validity checks of this model
-            if fact is not None and self.is_fact_valid(fact):
-                self.add_fact(graph, fact)
+            # choose a random relation type according to the relation distribution
+            relation_id = choice(list(self.relation_distribution.keys()),
+                                 replace=True,
+                                 p=list(normalized_relation_distribution.values()))
+            if relation_id in self.relation_distribution.keys():
+                # synthesize a fact using the distributions of the relations and their domains and ranges
+                fact = self.synthesize_fact(
+                    relation_id=relation_id,
+                    normalized_relation_domain_distribution=normalized_relation_domain_distribution,
+                    normalized_relation_range_distribution=normalized_relation_range_distribution
+                )
+
+                # test if a fact was synthesized and if it passes the validity checks of this model
+                if fact is not None and self.is_fact_valid(graph, relation_id, fact):
+                    self.add_fact(graph, fact)
 
         self.print_synthesis_details()
         self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
