@@ -40,7 +40,7 @@ def build_m2_model(tensor_file: str, output_name: str) -> Tuple[KBModelM2, str]:
     m1_model = pickle.load(open(m1_model_path, "rb"))
     assert isinstance(m1_model, KBModelM1)
 
-    model = KBModelM2.generate_from_tensor(m1_model, tensor_file)
+    model = KBModelM2.generate_from_tensor_and_model(m1_model, tensor_file)
     return model, f"{output_name}-M2.pkl"
 
 
