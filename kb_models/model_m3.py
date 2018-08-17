@@ -86,7 +86,7 @@ class KBModelM3(KBModelM2):
                 self.count_violate_inv_functionality_facts += 1
                 return False
 
-        if not self.reflexiveness[r_i]:
+        if not self.relation_id_to_reflexiveness[r_i]:
             if s_id == o_id:
                 self.count_violate_non_reflexiveness_facts += 1
                 return False
@@ -388,7 +388,7 @@ class KBModelM3(KBModelM2):
                         subject_entities = subject_entities - self.saturated_subj[r_i][o_types]
 
                     # ensures non-reflexiveness by removing subject id from objects pool
-                    if not self.reflexiveness[r_i] and s_i in object_entities:
+                    if not self.relation_id_to_reflexiveness[r_i] and s_i in object_entities:
                         object_entities.remove(s_i)
 
                     n_entities_subject = len(subject_entities)
