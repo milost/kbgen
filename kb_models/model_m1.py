@@ -130,8 +130,8 @@ class KBModelM1(KBModel):
         """
         Print the statistics of the synthesization of a knowledge base with this M1 model.
         """
+        self.logger.debug(f"{self.duplicate_fact_count} facts had to be disregarded because they already existed")
         self.logger.debug(f"{self.fact_count} facts added")
-        self.logger.debug(f"{self.duplicate_fact_count} of those already existed")
 
     def check_for_quadratic_relations(self) -> List[int]:
         """
