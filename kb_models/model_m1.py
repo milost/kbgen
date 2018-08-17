@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Iterable, Optional
 
 from load_tensor_tools import loadGraphNpz, loadTypesNpz, load_types_dict, load_relations_dict, load_type_hierarchy, \
     load_prop_hierarchy, load_domains, load_ranges
@@ -373,6 +373,171 @@ class KBModelM1(KBModel):
         """
         return None
 
+    def initialize_graph_with_metadata(self) -> Graph:
+        """
+        Initializes the graph with the triples defining the entity types as such, the triples defining the relations as
+        such and the triples defining the type hierarchies of entity types and relations.
+        :return: the graph initialized with the triples defining the "metadata" (types and type hierarchies)
+        """
+        # the synthesized graph (initialised emtpy)
+        graph = Graph()
+
+        # adds the triples that define the entity types as such (classes)
+        graph = self.synthesize_entity_types(graph, self.entity_type_count)
+
+        # adds the triples that define the relations as such (object properties)
+        graph = self.synthesize_relations(graph, self.relation_count)
+
+        # adds the triples that define the entity type and property type hierarchies and the property domains and ranges
+        graph = self.synthesize_schema(graph)
+
+        return graph
+
+    def insert_synthetic_entities(self, graph: Graph, num_synthetic_entities: int) -> Graph:
+        """
+        Insert synthetic entities into the graph according to the distribution of entity types (multi types).
+        :param graph: the synthetic graph object
+        :param num_synthetic_entities: the number of entities to synthesize
+        :return: the synthetic graph object with synthetic entities
+        """
+        # add synthetic entities to the graph by adding the triples that define the type of relation for every entity
+        # synthetic entities are assigned multi types at random (via distribution) and the type of relation is added
+        # for every entity type in that multi type
+        # returns the new graph and a dictionary containing the used multi types pointing to the entity ids of the
+        # synthetic entities of that type
+        graph, entity_types_to_entity_ids = self.synthesize_entities(graph, num_synthetic_entities)
+
+        # reverse the dictionary so that every synthetic entity id points to its multi type
+        self.synthetic_id_to_type = {synthetic_entity_id: multi_type for multi_type in entity_types_to_entity_ids.keys()
+                                     for synthetic_entity_id in entity_types_to_entity_ids[multi_type]}
+        self.entity_types_to_entity_ids = entity_types_to_entity_ids
+
+        return graph
+
+    def normalize_relation_distribution(self) -> Dict[int, float]:
+        """
+        Normalize the relation distribution so that it can be used as probabilities for random selections.
+        :return: dictionary pointing from a relation id to the normalized occurrences of that relation
+        """
+        # TODO
+        quadratic_relations = self.check_for_quadratic_relations()
+        adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(self.relation_distribution,
+                                                                                       quadratic_relations)
+
+        # normalize relation distribution
+        # first sort the dictionary by the relation id (which are in [0, num_relations)) then normalize them
+        sorted_values = [occurrences for relation_id, occurrences in sorted(adjusted_relations_distribution.items())]
+        normalized_values = list(normalize(sorted_values))
+        # dictionary of relation ids pointing to their frequency (in [0, 1])
+        normalized_relation_distribution: Dict[int, float] = {}
+        # add normalized relation occurrences to the distribution dictionary
+        for relation_id in adjusted_relations_distribution.keys():
+            normalized_relation_distribution[relation_id] = normalized_values[relation_id]
+        return normalized_relation_distribution
+
+    def normalize_relation_domain_distribution(self) -> Dict[int, Iterable[float]]:
+        """
+        Normalize the relation domain distribution so that it can be used as probabilities for random selections.
+        :return: dictionary pointing from a relation id to a list of the normalized occurrences of the multi types
+                 that are the entity types of the subjects of that relation. The indices of the normalized values
+                 correspond with the multi types in the un-normalized distribution
+        """
+        # normalize relation domain distribution
+        # this is basically just copies relation_domain_distribution and replaces the occurrences with normalized values
+        normalized_relation_domain_distribution = {}
+
+        # iterate over the ids of the synthesized relation types
+        for relation_id in range(self.relation_count):
+            normalized_distribution = normalize(self.relation_domain_distribution[relation_id].values())
+            normalized_relation_domain_distribution[relation_id] = normalized_distribution
+
+        return normalized_relation_domain_distribution
+
+    def normalize_relation_range_distribution(self) -> Dict[int, Dict[MultiType, Iterable[float]]]:
+        """
+        Normalize the relation range distribution so that it can be used as probabilities for random selections.
+        :return: dictionary pointing from a relation id to a dictionary pointing from the multi types that occurred as
+                 subject in the relation pointing to a list of the normalized occurrences of the multi types that
+                 occurred as object in the relation with that specific subject. The indices of the normalized values
+                 correspond with the multitypes in the un-normalized distribution
+        """
+
+        # normalize relation range distribution
+        # this is basically just copies relation_range_distribution and replaces the occurrences with normalized values
+        normalized_relation_range_distribution: Dict[int, Dict[MultiType, Iterable[float]]] = {}
+
+        # iterate over the ids of the synthesized relation types
+        for relation_id in range(self.relation_count):
+            normalized_relation_range_distribution[relation_id] = {}
+            for relation_domain in self.relation_range_distribution[relation_id].keys():
+                relation_range_values = self.relation_range_distribution[relation_id][relation_domain].values()
+                normalized_relation_range_distribution[relation_id][relation_domain] = normalize(relation_range_values)
+
+        return normalized_relation_range_distribution
+
+    def synthesize_fact(self,
+                        normalized_relation_distribution: Dict[int, float],
+                        normalized_relation_domain_distribution: Dict[int, Iterable[float]],
+                        normalized_relation_range_distribution: Dict[int, Dict[MultiType, Iterable[float]]]
+                        ) -> Optional[Tuple[str, str, str]]:
+        # choose a random relation type according to the relation distribution
+        relation_id = choice(list(self.relation_distribution.keys()),
+                             replace=True,
+                             p=list(normalized_relation_distribution.values()))
+        if relation_id in self.relation_distribution.keys():
+            # relation_id = self.dist_relations.keys().index(rel_uri)
+            # relation_id = i
+
+            # select random domain of the valid domains for this relation type according to the domain distribution
+            # a domain is a multi type
+            relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
+                                     p=normalized_relation_domain_distribution[relation_id])
+
+            # the number of synthetic entities with the multi type of the selected domain
+            entity_domain_count = len(self.entity_types_to_entity_ids[relation_domain])
+
+            # select random range of the valid ranges for the selected domain according to the range distribution
+            # a range is a multi type
+            relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
+                                    p=normalized_relation_range_distribution[relation_id][relation_domain])
+
+            # the number of synthetic entities with the multi type of the selected range
+            entity_range_count = len(self.entity_types_to_entity_ids[relation_range])
+
+            # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
+            # the range
+            if entity_domain_count > 0 and entity_range_count > 0:
+                # TODO
+                subject_model = self.select_subject_model(relation_id, relation_domain)
+                # TODO
+                object_model = self.select_object_model(relation_id, relation_domain, relation_range)
+
+                # select one of the possible entities as a subject according to the subject model
+                possible_subject_entities = self.entity_types_to_entity_ids[relation_domain]
+                subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
+
+                # select one of the possible entities as an object according to the object model
+                possible_object_entities = self.entity_types_to_entity_ids[relation_range]
+                object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
+
+                # create fact with the ids of the entities and add it to the graph
+                rdf_relation = URIRelation(relation_id).uri
+                rdf_subject = URIEntity(subject_entity).uri
+                rdf_object = URIEntity(object_entity).uri
+
+                fact = (rdf_subject, rdf_relation, rdf_object)
+
+                return fact
+
+    def is_fact_valid(self, fact: Tuple[str, str, str]) -> bool:
+        """
+        Function used to filter synthesized facts before they are added to the synthesized knowledge graph. In this M1
+        Model there is no filtering and thus it is only a placeholder.
+        :param fact: the synthesized that will be added to the knowledge graph
+        :return: True if the fact is valid and can be added to the knowledge graph
+        """
+        return True
+
     def synthesize(self,
                    size: float = 1.0,
                    number_of_entities: int = None,
@@ -411,65 +576,16 @@ class KBModelM1(KBModel):
         if number_of_edges is not None:
             num_synthetic_facts = number_of_edges
 
-        # the synthesized graph (initialised emtpy)
-        graph = Graph()
+        # initialize graph with the triples defining the entity types, relations and type hierarchies
+        graph = self.initialize_graph_with_metadata()
 
-        # TODO
-        quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(self.relation_distribution,
-                                                                                       quadratic_relations)
-        # list of the ids of the synthesized entities and relations
-        # entity_type_ids = range(self.entity_type_count)
-        relation_ids = range(self.relation_count)
+        # insert synthetic entities whose entity types mirror the distribution of entity types
+        graph = self.insert_synthetic_entities(graph, num_synthetic_entities)
 
-        # adds the triples that define the entity types as such (classes)
-        graph = self.synthesize_entity_types(graph, self.entity_type_count)
-
-        # adds the triples that define the relations as such (object properties)
-        graph = self.synthesize_relations(graph, self.relation_count)
-
-        # adds the triples that define the entity type and property type hierarchies and the property domains and ranges
-        graph = self.synthesize_schema(graph)
-
-        # add synthetic entities to the graph by adding the triples that define the type of relation for every entity
-        # synthetic entities are assigned multi types at random (via distribution) and the type of relation is added
-        # for every entity type in that multi type
-        # returns the new graph and a dictionary containing the used multi types pointing to the entity ids of the
-        # synthetic entities of that type
-        graph, entity_types_to_entity_ids = self.synthesize_entities(graph, num_synthetic_entities)
-
-        # reverse the dictionary so that every synthetic entity id points to its multi type
-        self.synthetic_id_to_type = {synthetic_entity_id: multi_type for multi_type in entity_types_to_entity_ids.keys()
-                                     for synthetic_entity_id in entity_types_to_entity_ids[multi_type]}
-        self.entity_types_to_entity_ids = entity_types_to_entity_ids
-
-        self.logger.info("Synthesizing edges/facts...")
-
-        # normalize relation distribution
-        # first sort the dictionary by the relation id (which are in [0, num_relations)) then normalize them
-        sorted_values = [occurrences for relation_id, occurrences in sorted(adjusted_relations_distribution.items())]
-        normalized_values = list(normalize(sorted_values))
-        # dictionary of relation ids pointing to their frequency (in [0, 1])
-        relation_distribution: Dict[int, float] = {}
-        # add normalized relation occurrences to the distribution dictionary
-        for relation_id in adjusted_relations_distribution.keys():
-            relation_distribution[relation_id] = normalized_values[relation_id]
-
-        # normalize relation domain distribution
-        # this is basically just copies relation_domain_distribution and replaces the occurrences with normalized values
-        relation_domain_distribution = {}
-        for relation_id in relation_ids:
-            normalized_distribution = normalize(self.relation_domain_distribution[relation_id].values())
-            relation_domain_distribution[relation_id] = normalized_distribution
-
-        # normalize relation range distribution
-        # this is basically just copies relation_range_distribution and replaces the occurrences with normalized values
-        relation_range_distribution = {}
-        for relation_id in relation_ids:
-            relation_range_distribution[relation_id] = {}
-            for relation_domain in self.relation_range_distribution[relation_id].keys():
-                relation_range_values = self.relation_range_distribution[relation_id][relation_domain].values()
-                relation_range_distribution[relation_id][relation_domain] = normalize(relation_range_values)
+        # normalize the distributions of the relation properties so that they can be used for random selections
+        normalized_relation_distribution = self.normalize_relation_distribution()
+        normalized_relation_domain_distribution = self.normalize_relation_domain_distribution()
+        normalized_relation_range_distribution = self.normalize_relation_range_distribution()
 
         # counter for the number of facts in the graph
         self.fact_count = 0
@@ -484,54 +600,15 @@ class KBModelM1(KBModel):
 
         # repeat until enough facts are generated
         while self.fact_count < num_synthetic_facts:
-            # choose a random relation type according to the relation distribution
-            relation_id = choice(list(self.relation_distribution.keys()),
-                                 replace=True,
-                                 p=list(relation_distribution.values()))
-            if relation_id in self.relation_distribution.keys():
-                # relation_id = self.dist_relations.keys().index(rel_uri)
-                # relation_id = i
-
-                # select random domain of the valid domains for this relation type according to the domain distribution
-                # a domain is a multi type
-                relation_domain = choice(list(self.relation_domain_distribution[relation_id].keys()),
-                                         p=relation_domain_distribution[relation_id])
-
-                # the number of synthetic entities with the multi type of the selected domain
-                entity_domain_count = len(entity_types_to_entity_ids[relation_domain])
-
-                # select random range of the valid ranges for the selected domain according to the range distribution
-                # a range is a multi type
-                relation_range = choice(list(self.relation_range_distribution[relation_id][relation_domain].keys()),
-                                        p=relation_range_distribution[relation_id][relation_domain])
-
-                # the number of synthetic entities with the multi type of the selected range
-                entity_range_count = len(entity_types_to_entity_ids[relation_range])
-
-                # only continue if there exist synthetic entities with the correct multi type ofr the domain as well as
-                # the range
-                if entity_domain_count > 0 and entity_range_count > 0:
-                    # TODO
-                    subject_model = self.select_subject_model(relation_id, relation_domain)
-                    # TODO
-                    object_model = self.select_object_model(relation_id, relation_domain, relation_range)
-
-                    # select one of the possible entities as a subject according to the subject model
-                    possible_subject_entities = entity_types_to_entity_ids[relation_domain]
-                    subject_entity = possible_subject_entities[self.select_instance(entity_domain_count, subject_model)]
-
-                    # select one of the possible entities as an object according to the object model
-                    possible_object_entities = entity_types_to_entity_ids[relation_range]
-                    object_entity = possible_object_entities[self.select_instance(entity_range_count, object_model)]
-
-                    # create fact with the ids of the entities and add it to the graph
-                    rdf_relation = URIRelation(relation_id).uri
-                    rdf_subject = URIEntity(subject_entity).uri
-                    rdf_object = URIEntity(object_entity).uri
-
-                    fact = (rdf_subject, rdf_relation, rdf_object)
-
-                    self.add_fact(graph, fact)
+            # synthesize a fact using the distributions of the relations and their domains and ranges
+            fact = self.synthesize_fact(
+                normalized_relation_distribution=normalized_relation_distribution,
+                normalized_relation_domain_distribution=normalized_relation_domain_distribution,
+                normalized_relation_range_distribution=normalized_relation_range_distribution
+            )
+            # test if a fact was synthesized and if it passes the validity checks of this model
+            if fact is not None and self.is_fact_valid(fact):
+                self.add_fact(graph, fact)
 
         self.print_synthesis_details()
         self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
