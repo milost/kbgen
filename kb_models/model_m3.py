@@ -1,16 +1,18 @@
 import logging
 import random
 from copy import deepcopy
+from typing import Dict, Set, Tuple
 
 import numpy as np
 import tqdm
 from matplotlib import pyplot as plt
 from kb_models.model_m2 import KBModelM2
 from numpy.random import choice
-from rdflib import Graph
+from rdflib import Graph, URIRef
 import datetime
 
-from util_models import URIEntity, URIRelation
+from rules import RuleSet
+from util_models import URIEntity, URIRelation, MultiType
 from util import normalize, create_logger
 
 
@@ -23,24 +25,76 @@ class KBModelM3(KBModelM2):
     - Horn rules are assumed to be produced by AMIE
     """
 
-    def __init__(self, model_naive, rules):
-        assert type(model_naive) == KBModelM2
-        for k, v in model_naive.__dict__.items():
-            self.__dict__[k] = v
+    def __init__(self, m2_model: KBModelM2, rules: RuleSet):
+        """
+        Create an M3 model based on an M2 model and a rule set of horn rules (produces by AMIE).
+        :param m2_model: the previously built M2 model
+        :param rules: Horn rules that will be used when synthesizing a knowledge base. Currenlty it is assumed that they
+                      are produced by AMIE TODO: why this assumption
+        """
+        isinstance(m2_model, KBModelM2), f"Model is of type {type(m2_model)} but needs to be of type KBModelM1"
+        super(KBModelM3, self).__init__(
+            m1_model=m2_model,
+            functionalities=m2_model.functionalities,
+            inverse_functionalities=m2_model.inverse_functionalities,
+            relation_id_to_density=m2_model.relation_id_to_density,
+            relation_id_to_distinct_subjects=m2_model.relation_id_to_distinct_subjects,
+            relation_id_to_distinct_objects=m2_model.relation_id_to_distinct_objects,
+            relation_id_to_reflexiveness=m2_model.relation_id_to_reflexiveness
+        )
         self.rules = rules
-        self.max_recurr = 10
+        # the maximum number of recursions allowed when checking Horn rules
+        self.max_recursion_count = 10
+        # TODO
         self.pca = True
-        pass
+
+        # initialized in other methods
+        #
+        # counters initialized in the method start_counts()
+        self.fact_count = 0
+        self.count_rule_facts = 0
+        self.number_of_facts_with_empty_distributions = 0
+        self.duplicate_fact_count = 0
+        self.number_of_empty_pool_occurrences = 0
+        self.num_facts_violating_functionality = 0
+        self.num_facts_violating_inverse_functionality = 0
+        self.num_facts_violating_non_reflexiveness = 0
+        self.number_of_key_errors = 0
+
+        # size of the synthetic knowledge base
+        self.num_synthetic_entities = 0
+        self.num_synthetic_facts = 0
+
+        # inverse relation_to_id dictionary
+        self.relation_id_to_relation: Dict[int, URIRef] = None
+
+        # copies of distributions used for pruning
+        self.adjusted_relations_distribution_copy: Dict[int, float] = None
+        self.relation_domain_distribution_copy: Dict[int, Dict[MultiType, int]] = None
+        self.relation_range_distribution_copy: Dict[int, Dict[MultiType, Dict[MultiType, int]]] = None
+
+        # sets of entity ids that have specific relation as incoming or outgoing edges exactly once
+        self.relation_id_to_subject_pool: Dict[int, Set[int]] = None
+        self.relation_id_to_object_pool: Dict[int, Set[int]] = None
+
+        # contain invalid combinations of subject types with object ids and vice versa
+        self.saturated_subject_ids: Dict[int, Dict[MultiType, Set[int]]] = None
+        self.saturated_object_ids: Dict[int, Dict[MultiType, Set[int]]] = None
+
+        # logger used for the query times
+        self.query_time = None
 
     def print_synthesis_details(self):
-        """ Prints synthesis statistics for debugging purposes """
+        """
+        Print the statistics of the synthesization of a knowledge base with this M3 model.
+        """
         super(KBModelM3, self).print_synthesis_details()
-        self.logger.debug("exhausted: %d" % self.count_exhausted_facts)
-        self.logger.debug("no entities of type: %d" % self.count_no_entities_of_type)
-        self.logger.debug("key error %d" % self.key_error_count)
-        self.logger.debug("added by rules: %d" % self.count_rule_facts)
-        self.logger.debug("step %f" % self.step)
-        self.logger.debug(self.d_r)
+        self.logger.debug(f"exhausted: {self.number_of_facts_with_empty_distributions}")
+        self.logger.debug(f"no entities of type: {self.number_of_empty_pool_occurrences}")
+        self.logger.debug(f"key error {self.number_of_key_errors}")
+        self.logger.debug(f"added by rules: {self.count_rule_facts}")
+        self.logger.debug(f"step {self.step}")
+        self.logger.debug(self.adjusted_relations_distribution_copy)
 
     def plot_histogram(self, vals, weights):
         """
@@ -58,15 +112,20 @@ class KBModelM3(KBModelM2):
 
     def start_counts(self):
         """Initializes various counts"""
-        self.count_facts = 0
+        # counters from M1 model
+        self.fact_count = 0
+        self.duplicate_fact_count = 0
+
+        # counters from M2 model
+        self.num_facts_violating_functionality = 0
+        self.num_facts_violating_inverse_functionality = 0
+        self.num_facts_violating_non_reflexiveness = 0
+
+        # counters from this model
         self.count_rule_facts = 0
-        self.count_exhausted_facts = 0
-        self.count_already_existent_facts = 0
-        self.count_no_entities_of_type = 0
-        self.count_violate_functionality_facts = 0
-        self.count_violate_inv_functionality_facts = 0
-        self.count_violate_non_reflexiveness_facts = 0
-        self.key_error_count = 0
+        self.number_of_facts_with_empty_distributions = 0
+        self.number_of_empty_pool_occurrences = 0
+        self.number_of_key_errors = 0
 
     def validate_owl(self, r_i, s_id, o_id):
         """
@@ -76,391 +135,749 @@ class KBModelM3(KBModelM2):
         :param o_id: object id
         :return: true if consistent, false otherwise
         """
-        if r_i in self.func_rel_subj_pool:
-            if s_id not in self.func_rel_subj_pool[r_i]:
-                self.count_violate_functionality_facts += 1
+        if r_i in self.relation_id_to_subject_pool:
+            if s_id not in self.relation_id_to_subject_pool[r_i]:
+                self.num_facts_violating_functionality += 1
                 return False
 
-        if r_i in self.inv_func_rel_subj_pool:
-            if o_id not in self.inv_func_rel_subj_pool[r_i]:
-                self.count_violate_inv_functionality_facts += 1
+        if r_i in self.relation_id_to_object_pool:
+            if o_id not in self.relation_id_to_object_pool[r_i]:
+                self.num_facts_violating_inverse_functionality += 1
                 return False
 
         if not self.relation_id_to_reflexiveness[r_i]:
             if s_id == o_id:
-                self.count_violate_non_reflexiveness_facts += 1
+                self.num_facts_violating_non_reflexiveness += 1
                 return False
 
         return True
 
-    def produce_rules(self, g, r_i, fact, recurr_count=0):
+    def produce_rules(self,
+                      graph: Graph,
+                      relation_id: int,
+                      fact: Tuple[URIEntity, URIRelation, URIEntity],
+                      recursion_count: int = 0):
         """
         Checks if a new fact added trigger any horn rules to generate new facts
-        :param g: synthesized graph
-        :param r_i: id of the added relation
+        :param graph: synthesized graph
+        :param relation_id: id of the added relation
         :param fact: added fact
-        :param recurr_count: recursion count (tracks the recursion depth)
+        :param recursion_count: recursion count (tracks the recursion depth)
         """
-
-        s, p, o = fact
-        if recurr_count < self.max_recurr and r_i in self.rules.rules_per_relation:
-            rules = self.rules.rules_per_relation[r_i]
+        rdf_subject, rdf_relation, rdf_object = fact
+        # TODO what is stored in self.rules.rules_per_relation
+        if recursion_count < self.max_recursion_count and relation_id in self.rules.rules_per_relation:
+            rules = self.rules.rules_per_relation[relation_id]
+            # TODO: what is rule
             for rule in rules:
                 rand_number = random.random()
                 if (self.pca and rand_number < rule.pca_conf) or (not self.pca and rand_number < rule.std_conf):
                     start_t = datetime.datetime.now()
-                    new_facts = rule.produce(g, s, p, o)
+                    new_facts = rule.produce(graph, rdf_subject, rdf_relation, rdf_object)
                     delta = datetime.datetime.now() - start_t
 
                     rule_added_facts = 0
                     for new_fact in new_facts:
-                        s, p, o = new_fact
-                        s_id = URIEntity.extract_id(s).id
-                        o_id = URIEntity.extract_id(o).id
-                        r_i = URIRelation.extract_id(p).id
+                        rdf_subject, rdf_relation, rdf_object = new_fact
+                        subject_id = URIEntity.extract_id(rdf_subject).id
+                        object_id = URIEntity.extract_id(rdf_object).id
+                        relation_id = URIRelation.extract_id(rdf_relation).id
 
-                        s_types = self.synthetic_id_to_type[s_id]
-                        o_types = self.synthetic_id_to_type[o_id]
+                        subject_type = self.synthetic_id_to_type[subject_id]
+                        object_type = self.synthetic_id_to_type[object_id]
 
-                        if self.validate_owl(r_i, s_id, o_id) and self.d_rdr[r_i][s_types][o_types] > 0:
-                            if self.add_fact(g, new_fact):
+                        if (
+                            self.validate_owl(relation_id, subject_id, object_id)
+                            and self.relation_range_distribution_copy[relation_id][subject_type][object_type] > 0
+                        ):
+                            if self.add_fact(graph, new_fact):
                                 rule_added_facts += 1
-                                self.update_distributions(r_i, s_types, o_types)
-                                self.update_pools(r_i, s_id, o_id)
+                                self.update_distributions(relation_id, subject_type, object_type)
+                                self.update_pools(relation_id, subject_id, object_id)
                                 self.count_rule_facts += 1
-                                self.produce_rules(g, r_i, new_fact, recurr_count + 1)
+                                self.produce_rules(graph, relation_id, new_fact, recursion_count + 1)
                         else:
-                            self.count_exhausted_facts += 1
+                            self.number_of_facts_with_empty_distributions += 1
 
                     rule_size = len(rule.antecedents)
                     num_prod_facts = len(list(new_facts))
                     num_new_facts = rule_added_facts
                     query_time_micros = delta.microseconds
-                    kb_size = len(g)
+                    kb_size = len(graph)
                     self.query_time.debug(f"rule_size={rule_size}, prod_facts={num_prod_facts}, "
                                           f"new_facts={num_new_facts}, query_time_micros={query_time_micros}, "
                                           f"kb_size={kb_size}")
-                    # self.query_time.debug("rule_size=%d, prod_facts=%d, new_facts=%d, query_time_micros=%d, kb_size=%d" % (len(rule.antecedents), len(new_facts), rule_added_facts, delta.microseconds, len(g)))
 
-    def update_distributions(self, r_i, s_types, o_types):
+    def update_distributions(self, relation_id: int, subject_type: MultiType, object_type: MultiType) -> None:
         """
         Updates the distributions after a given fact has been added
         (decreases the step from the original distribution counts)
-        :param r_i: id of the relation added
-        :param s_types: multitype of the subject
-        :param o_types: multitype of the object
+        :param relation_id: id of the relation added
+        :param subject_type: multitype of the subject
+        :param object_type: multitype of the object
         """
         step = float(self.step)
 
-        if r_i in self.d_r:
-            self.d_r[r_i] -= step
-            if self.d_r[r_i] <= 0:
-                self.delete_relation_entries(r_i)
-            if r_i in self.d_dr and s_types in self.d_dr[r_i]:
-                self.d_dr[r_i][s_types] -= step
-                if self.d_dr[r_i][s_types] <= 0:
-                    self.delete_relation_domain_entries(r_i, s_types)
-                if s_types in self.d_rdr[r_i] and o_types in self.d_rdr[r_i][s_types]:
-                    self.d_rdr[r_i][s_types][o_types] -= step
-                    if self.d_rdr[r_i][s_types][o_types] <= 0:
-                        self.delete_relation_domain_range_entries(r_i, s_types, o_types)
+        # FIXME: somehow the synthesizing gets stuck in a loop
 
-        self.delete_empty_entries(r_i, s_types)
+        # if the relation is still in the pruned distributions
+        if relation_id in self.adjusted_relations_distribution_copy:
 
-    def prune_distrbutions(self):
+            # reduce the occurrences of the relation by step and remove it from all three
+            # distributions, if it falls to or below zero
+            self.adjusted_relations_distribution_copy[relation_id] -= step
+            if self.adjusted_relations_distribution_copy[relation_id] <= 0:
+                self.delete_relation_entries(relation_id)
+
+            # continue if the subject type is still in the pruned domain distributions
+            if (
+                relation_id in self.relation_domain_distribution_copy
+                and subject_type in self.relation_domain_distribution_copy[relation_id]
+            ):
+                # reduce the occurrences of the domain type by step, and delete the subject type from the domain
+                # and range distributions of that relation if it falls to or below zero
+                self.relation_domain_distribution_copy[relation_id][subject_type] -= step
+                if self.relation_domain_distribution_copy[relation_id][subject_type] <= 0:
+                    self.delete_relation_domain_entries(relation_id, subject_type)
+
+                # continue if the object type is still in the range distribution of the domain (subject type)
+                if (
+                    subject_type in self.relation_range_distribution_copy[relation_id]
+                    and object_type in self.relation_range_distribution_copy[relation_id][subject_type]
+                ):
+                    # reduce the occurrences of the range type by step, and delete the object type from the range
+                    # distribution of that relation and domain if it falls to or below zero
+                    self.relation_range_distribution_copy[relation_id][subject_type][object_type] -= step
+                    if self.relation_range_distribution_copy[relation_id][subject_type][object_type] <= 0:
+                        self.delete_relation_domain_range_entries(relation_id, subject_type, object_type)
+
+        # remove any resulting empty entries in the relation or domain distributions
+        self.delete_empty_entries(relation_id, subject_type)
+
+    def prune_distributions(self):
         """
         Prunes the original distributions based on the entities generated.
         If a given multitype does not have any instances in the synthesized data, all the entries
         in the distributions containing the given multitype are deleted
         """
-        counts_removed = 0.0
-        d_r_copy = deepcopy(self.d_r)
-        d_dr_copy = deepcopy(self.d_dr)
-        d_rdr_copy = deepcopy(self.d_rdr)
-        for r in d_r_copy.keys():
-            if d_r_copy[r] == 0:
-                self.delete_relation_entries(r)
-            for domain in d_dr_copy[r].keys():
+        # aggregate of the entries removed from the distributions
+        # the distributions contain occurrences of edges so this sum is a number of removed edges
+        number_removed_edges = 0
+
+        # local copies of the distributions that are pruned
+        adjusted_relations_distribution = deepcopy(self.adjusted_relations_distribution_copy)
+        relation_domain_distribution = deepcopy(self.relation_domain_distribution_copy)
+        relation_range_distribution = deepcopy(self.relation_range_distribution_copy)
+
+        for relation_id in adjusted_relations_distribution.keys():
+            # delete relation from distributions if it never occurs (i.e., distribution value equals 0
+            if adjusted_relations_distribution[relation_id] == 0:
+                # delete the relation from all three distributions
+                self.delete_relation_entries(relation_id)
+
+            # iterate over distribution copies that still contain the deleted relation
+            for domain in relation_domain_distribution[relation_id].keys():
+
+                # if the domain multitype does not have any synthetic entities of its type
+                # i.e., no entities of this domains multitype were generated
                 if domain not in self.entity_types_to_entity_ids.keys() or not self.entity_types_to_entity_ids[domain]:
-                    counts_removed += d_dr_copy[r][domain]
-                    self.delete_relation_domain_entries(r, domain)
+                    number_removed_edges += relation_domain_distribution[relation_id][domain]
+
+                    # delete the domain from the original domain and range distributions
+                    self.delete_relation_domain_entries(relation_id, domain)
                 else:
-                    for range in set(d_rdr_copy[r][domain].keys()):
-                        if range not in self.entity_types_to_entity_ids.keys() or not self.entity_types_to_entity_ids[range]:
-                            counts_removed += d_rdr_copy[r][domain][range]
-                            self.delete_relation_domain_range_entries(r, domain, range)
+                    # otherwise check each range of the domain
+                    for range_of_domain in set(relation_range_distribution[relation_id][domain].keys()):
+                        # if no entities of the type of this range were synthesized
+                        if (
+                            range_of_domain not in self.entity_types_to_entity_ids.keys()
+                            or not self.entity_types_to_entity_ids[range_of_domain]
+                        ):
+                            number_removed_edges += relation_range_distribution[relation_id][domain][range_of_domain]
 
-                    if not d_rdr_copy[r][domain]:
-                        counts_removed += d_dr_copy[r][domain]
-                        self.delete_relation_domain_entries(r, domain)
+                            # delete the range from the original range distribution that was copied
+                            self.delete_relation_domain_range_entries(relation_id, domain, range_of_domain)
 
-            if not d_dr_copy[r]:
-                counts_removed += d_r_copy[r]
-                self.delete_relation_entries(r)
+                    # if the distribution contains no ranges for this domain delete the domain
+                    if not relation_range_distribution[relation_id][domain]:
+                        number_removed_edges += relation_domain_distribution[relation_id][domain]
 
-        if counts_removed > 0:
-            self.step *= (self.edge_count - counts_removed) / self.edge_count
+                        # delete the domain from the original domain and range distributions
+                        self.delete_relation_domain_entries(relation_id, domain)
 
-    def delete_relation_entries(self, r_i):
-        if r_i in self.d_r:
-            del self.d_r[r_i]
-        if r_i in self.d_dr:
-            del self.d_dr[r_i]
-        if r_i in self.d_rdr:
-            del self.d_rdr[r_i]
+            # if the distribution contains no domains for this relation delete the relation from all three distributions
+            if not relation_domain_distribution[relation_id]:
+                number_removed_edges += adjusted_relations_distribution[relation_id]
 
-    def delete_relation_domain_entries(self, r_i, domain):
-        if r_i in self.d_rdr and domain in self.d_rdr[r_i]:
-            del self.d_rdr[r_i][domain]
-        if r_i in self.d_dr and domain in self.d_dr[r_i]:
-            del self.d_dr[r_i][domain]
+                # delete the relation from all three distributions
+                self.delete_relation_entries(relation_id)
 
-    def delete_relation_domain_range_entries(self, r_i, domain, range):
-        if r_i in self.d_rdr and domain in self.d_rdr[r_i] and range in self.d_rdr[r_i][domain]:
-            del self.d_rdr[r_i][domain][range]
+        # TODO: why is this done?
+        # if any entries were removed from the distributions scale the step parameter (inverse size) down by a value
+        # in [0, 1) in relation to the number of removed entries and the total edge count in the original knowledge base
+        if number_removed_edges > 0:
+            self.step *= (self.edge_count - number_removed_edges) / self.edge_count
 
-    def delete_empty_entries(self, r_i, s_types):
-        counts_removed = 0
-        if r_i in self.d_dr and not self.d_dr[r_i]:
-            counts_removed += self.d_r[r_i]
-            self.delete_relation_entries(r_i)
+    def delete_relation_entries(self, relation_id: int) -> None:
+        """
+        Delete the entry of the given relation in the three distributions of relations, relation domains and relation
+        ranges.
+        :param relation_id: the id of the relation to delete
+        """
+        if relation_id in self.adjusted_relations_distribution_copy:
+            del self.adjusted_relations_distribution_copy[relation_id]
 
-        if r_i in self.d_rdr and s_types in self.d_rdr[r_i] and not self.d_rdr[r_i][s_types]:
-            counts_removed += self.d_dr[r_i][s_types]
-            self.delete_relation_domain_entries(r_i, s_types)
+        if relation_id in self.relation_domain_distribution_copy:
+            del self.relation_domain_distribution_copy[relation_id]
 
-        if counts_removed > 0:
-            remaining_facts = float(self.entity_count - self.count_facts) * self.step
-            self.step *= (remaining_facts - counts_removed) / remaining_facts
+        if relation_id in self.relation_range_distribution_copy:
+            del self.relation_range_distribution_copy[relation_id]
 
-    def update_pools(self, r_i, s_i, o_i):
-        counts_removed = 0
-        if r_i in self.d_r:
-            if r_i in self.func_rel_subj_pool and s_i in self.func_rel_subj_pool[r_i]:
-                self.func_rel_subj_pool[r_i].remove(s_i)
-            if r_i in self.inv_func_rel_subj_pool and o_i in self.inv_func_rel_subj_pool[r_i]:
-                self.inv_func_rel_subj_pool[r_i].remove(o_i)
+    def delete_relation_domain_entries(self, relation_id: int, domain: MultiType):
+        """
+        Delete the given domain from the distributions of the given relation in the distributions of domains and ranges
+        :param relation_id: the relation whose domain type is deleted
+        :param domain: the domain that will be removed from the original distributions
+        """
+        if self.relation_domain_distribution_copy.get(relation_id, {}).get(domain) is not None:
+            del self.relation_domain_distribution_copy[relation_id][domain]
 
-            if (r_i in self.func_rel_subj_pool and not self.func_rel_subj_pool[r_i]) or \
-                    (r_i in self.inv_func_rel_subj_pool and not self.inv_func_rel_subj_pool[r_i]):
-                counts_removed += self.d_r[r_i] if r_i in self.d_r else 0
-                self.delete_relation_entries(r_i)
+        if self.relation_range_distribution.get(relation_id, {}).get(domain) is not None:
+            del self.relation_range_distribution_copy[relation_id][domain]
 
-        if counts_removed > 0:
-            remaining_facts = float(self.synthetic_facts - self.count_facts) * self.step
-            self.step *= (remaining_facts - counts_removed) / remaining_facts
+    def delete_relation_domain_range_entries(self,
+                                             relation_id: id,
+                                             domain: MultiType,
+                                             range_of_domain: MultiType) -> None:
+        """
+        Delete the given range from the range distribution
+        :param relation_id: id of the relation whose range is deleted
+        :param domain: domain whose range is deleted
+        :param range_of_domain: the range of the domain to delete
+        """
+        # check that the range exists in the distributions and delete it if it does
+        if self.relation_range_distribution_copy.get(relation_id, {}).get(domain, {}).get(range_of_domain) is not None:
+            del self.relation_range_distribution_copy[relation_id][domain][range_of_domain]
 
-    def adjust_func_inv_func_relations(self):
-        counts_removed = 0
+    def delete_empty_entries(self, relation_id: id, subject_type: MultiType) -> None:
+        """
+        Deletes empty relations, with empty domain distributions and subject types with empty range distributions from
+        the distributions.
+        :param relation_id: the id of the relation
+        :param subject_type: the multitype of the subject
+        """
+        # the number of edge occurrences of a relation and edge occurrences of a relation with a specific domain that
+        # are removed from distributions due to empty domain or empty range distributions
+        number_of_removed_occurrences = 0
 
-        for r_i in self.functionalities.keys():
-            if r_i in self.d_r and r_i in self.func_rel_subj_pool:
-                diff = self.d_r[r_i] - len(self.func_rel_subj_pool[r_i])
+        # delete the relation from all three distributions if there are no domain distributions of the relation
+        if (
+            relation_id in self.relation_domain_distribution_copy
+            and not self.relation_domain_distribution_copy[relation_id]
+        ):
+            number_of_removed_occurrences += self.adjusted_relations_distribution_copy[relation_id]
+            self.delete_relation_entries(relation_id)
+
+        # delete the subject type from the relations domain and and range distributions if there are no range
+        # distributions for that subject type left
+        if (
+            relation_id in self.relation_range_distribution_copy
+            and subject_type in self.relation_range_distribution_copy[relation_id]
+            and not self.relation_range_distribution_copy[relation_id][subject_type]
+        ):
+            number_of_removed_occurrences += self.relation_domain_distribution_copy[relation_id][subject_type]
+            self.delete_relation_domain_entries(relation_id, subject_type)
+
+        # TODO: why is this scaling needed
+        # scale the step parameter according the number of removed occurrences
+        if number_of_removed_occurrences > 0:
+            remaining_facts = float(self.entity_count - self.fact_count) * self.step
+            self.step *= (remaining_facts - number_of_removed_occurrences) / remaining_facts
+
+    def update_pools(self, relation_id: int, subject_id: int, object_id: int) -> None:
+        """
+        Remove the subject and object from their respective pools after the fact was successfully added. Also remove
+        the relation from the distributions if either pool ends up empty and scale the step paramater according to the
+        number of removed occurrences from the distributions.
+        :param relation_id: the id of the relation
+        :param subject_id: the id of the subject
+        :param object_id: the id of the object
+        """
+
+        # FIXME: somehow the synthesizing gets stuck in a loop
+
+        # the number of edge occurrences of a relation and that are removed from distributions due to an empty subject
+        # or empty object pool
+        number_of_removed_occurrences = 0
+
+        # only continue if the relation still remains in the relation distribution
+        if relation_id in self.adjusted_relations_distribution_copy:
+            # remove the subject from the subject pool of the relation
+            if (
+                relation_id in self.relation_id_to_subject_pool
+                and subject_id in self.relation_id_to_subject_pool[relation_id]
+            ):
+                self.relation_id_to_subject_pool[relation_id].remove(subject_id)
+
+            # remove the object from the object pool of the relation
+            if (
+                relation_id in self.relation_id_to_object_pool
+                and object_id in self.relation_id_to_object_pool[relation_id]
+            ):
+                self.relation_id_to_object_pool[relation_id].remove(object_id)
+
+            # remove the relation from all three distributions if either the subject or the object pool of the relation
+            # is empty
+            if (
+                (relation_id in self.relation_id_to_subject_pool and not self.relation_id_to_subject_pool[relation_id])
+                or (relation_id in self.relation_id_to_object_pool and not self.relation_id_to_object_pool[relation_id])
+            ):
+                number_of_removed_occurrences += self.adjusted_relations_distribution_copy.get(relation_id, 0)
+                self.delete_relation_entries(relation_id)
+
+        # TODO: why is this scaling needed
+        # scale the step parameter according the number of removed occurrences
+        if number_of_removed_occurrences > 0:
+            remaining_facts = float(self.num_synthetic_facts - self.fact_count) * self.step
+            self.step *= (remaining_facts - number_of_removed_occurrences) / remaining_facts
+
+    def adjust_relation_distribution_with_pools(self) -> Dict[int, float]:
+        """
+        Adjust the number of occurrences of relations with a functionality score of 1.0, i.e. an entity can only be the
+        subject on one relation of that type. If only 5 of the synthesized entities are possible subjects, but the
+        relation has 10 occurrences in the distribution, the number of occurrences is set to 5 instead.
+        :return: the adjusted relation distribution
+        """
+        # the number of removed occurrences from the relation distribution
+        number_removed_occurrences = 0
+
+        # iterate over all functionalities
+        for relation_id in self.functionalities.keys():
+
+            # if the relation has a functionality of 1.0 (it has a subject pool) and still exists in the pruned
+            # relation distribution, adjust the number of occurrences of the relation in the pruned distribution
+            if (
+                relation_id in self.adjusted_relations_distribution_copy
+                and relation_id in self.relation_id_to_subject_pool
+            ):
+                num_subjects_in_pool = len(self.relation_id_to_subject_pool[relation_id])
+                # the number of occurrences of the relation subtracted by the number of possible subject entities
+                diff = self.adjusted_relations_distribution_copy[relation_id] - num_subjects_in_pool
+
+                # if the number of occurrences is higher than the number of possible subjects, set the number of
+                # occurrences to the (lower) number of possible subjects
                 if diff > 0:
-                    self.d_r[r_i] = len(self.func_rel_subj_pool[r_i])
-                    counts_removed += diff
+                    self.adjusted_relations_distribution_copy[relation_id] = num_subjects_in_pool
+                    number_removed_occurrences += diff
 
-        for r_i in self.inv_func_rel_subj_pool.keys():
-            if r_i in self.d_r and r_i in self.inv_func_rel_subj_pool:
-                diff = self.d_r[r_i] - len(self.inv_func_rel_subj_pool[r_i])
+        # iterate over all relations with an inverse functionality of 1.0 and for which valid object entities were
+        # synthesized
+        for relation_id in self.relation_id_to_object_pool.keys():
+
+            # if the relation still exists in the pruned relations distribution, adjust the number of occurrences of the
+            # relation in the pruned distribution
+            if relation_id in self.adjusted_relations_distribution_copy:
+                num_objects_in_pool = len(self.relation_id_to_object_pool[relation_id])
+                # the number of occurrences of the relation subtracted by the number of possible object entities
+                diff = self.adjusted_relations_distribution_copy[relation_id] - num_objects_in_pool
+
+                # if the number of occurrences is higher than the number of possible objects, set the number of
+                # occurrences to the (lower) number of possible objects
                 if diff > 0:
-                    self.d_r[r_i] = len(self.inv_func_rel_subj_pool[r_i])
-                    counts_removed += diff
+                    self.adjusted_relations_distribution_copy[relation_id] = num_objects_in_pool
+                    number_removed_occurrences += diff
 
-            if counts_removed > 0:
-                remaining_facts = float(self.synthetic_facts - self.count_facts) * self.step
-                self.step *= (remaining_facts - counts_removed) / remaining_facts
+            # TODO: is the indentation correct?
+            if number_removed_occurrences > 0:
+                # the fact count is incremented in KBModelM1::add_fact
+                # TODO: why this scaling
+                remaining_facts = float(self.num_synthetic_facts - self.fact_count) * self.step
+                self.step *= (remaining_facts - number_removed_occurrences) / remaining_facts
 
-        return self.d_r
+        return self.adjusted_relations_distribution_copy
 
-    def synthesize(self, size=1.0, number_of_entities=None, number_of_edges=None, debug=False, pca=True):
-        # initialize variables not used in this model but in the super class
-        self.fact_count = 0
-        self.duplicate_fact_count = 0
+    def functionality_entity_id_pools(self) -> Dict[int, Set[int]]:
+        """
+        Create a dictionary pointing from a relation id to a set of entities that have this relation as outgoing edge.
+        These sets (pools) are only created for relations with a functionality score of 1, meaning that every entity
+        that has an outgoing edge of this relation, has only one outgoing edge of this relation (not more).
+        :return: the dictionary pointing from relation ids to sets of entity ids
+        """
+        # dictionary pointing from relation id to a set of entity ids that have this relation as outgoing edge
+        relation_id_to_domain_entity_id_pool = {}
 
-        print("Synthesizing HORN model")
+        # iterate over the functionalities of every relation
+        for relation_id, functionality in self.functionalities.items():
+            # if every entity that has an outgoing edge of this relation has only one of those edges and the relation
+            # is still in the pruned domain distribution add the entities to the entity pool
+            if functionality == 1 and relation_id in self.relation_domain_distribution_copy:
+                relation_id_to_domain_entity_id_pool[relation_id] = set()
+
+                # add all entities that are of a multitype that is a domain of this relation to the entity pool
+                for domain in self.relation_domain_distribution_copy[relation_id]:
+                    if domain in self.entity_types_to_entity_ids.keys():
+                        # set of the entity ids that have the multitype of this domain
+                        new_entities = set(self.entity_types_to_entity_ids[domain])
+                        # add the ids of these new entities to the existing pool of entity ids
+                        new_entities = relation_id_to_domain_entity_id_pool[relation_id].union(new_entities)
+                        relation_id_to_domain_entity_id_pool[relation_id] = new_entities
+
+        return relation_id_to_domain_entity_id_pool
+
+    def inverse_functionality_entity_id_pools(self) -> Dict[int, Set[int]]:
+        """
+        Create a dictionary pointing from a relation id to a set of entities that have this relation as incoming edge.
+        These sets (pools) are only created for relations with an inverse functionality score of 1, meaning that every
+        entity that has an incoming edge of this relation, has only one incoming edge of this relation (not more).
+        :return: the dictionary pointing from relation ids to sets of entity ids
+        """
+        # dictionary pointing from relation id to a set of entity ids that have this relation as incoming edge
+        relation_id_to_range_entity_id_pool = {}
+
+        # iterate over the inverse functionalities of every relation
+        for relation_id, inverse_functionality in self.inverse_functionalities.items():
+            # if every entity that has an incoming edge of this relation has only one of those edges and the relation
+            # is still in the pruned range distribution add the entities to the entity pool
+            if inverse_functionality == 1 and relation_id in self.relation_range_distribution_copy:
+                relation_id_to_range_entity_id_pool[relation_id] = set()
+
+                # add all entities that are of a multitype that is a range of this relation to the entity pool
+                for domain in self.relation_domain_distribution_copy[relation_id]:
+                    for range_of_domain in self.relation_range_distribution_copy[relation_id][domain]:
+                        if range_of_domain in self.entity_types_to_entity_ids.keys():
+                            # set of the entity ids that have the multitype of this range
+                            new_entities = set(self.entity_types_to_entity_ids[range_of_domain])
+                            # add the ids of these new entities to the existing pool of entity ids
+                            new_entities = relation_id_to_range_entity_id_pool[relation_id].union(new_entities)
+                            relation_id_to_range_entity_id_pool[relation_id] = new_entities
+
+        return relation_id_to_range_entity_id_pool
+
+    def synthesize(self,
+                   size: float = 1.0,
+                   number_of_entities: int = None,
+                   number_of_edges: int = None,
+                   debug: bool = False,
+                   pca: bool = True):
+        """
+        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
+        entities and edges.
+        :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
+                     the model was trained on, 2.0 means it should have twice the size)
+        :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
+                                   will be determined by the number of entities on which the model was trained and the
+                                   size parameter
+        :param number_of_edges: the number of edges (facts) the synthesized graph should have. If not set this number
+                                will be determined by the number of edges on which the model was trained and the size
+                                parameter
+        :param debug: boolean if logging should be on debug level
+        :param pca: boolean if PCA should be used. This parameter is not used
+        :return: the synthesized graph as rdf graph object
+        """
+        # should no longer be needed
+        # # initialize variables not used in this model but in the super class
+        # self.fact_count = 0
+        # self.duplicate_fact_count = 0
+
+        print("Synthesizing HORN model...")
 
         level = logging.DEBUG if debug else logging.INFO
         self.logger = create_logger(level, name="kbgen")
         self.synth_time_logger = create_logger(level, name="synth_time")
         self.query_time = create_logger(level, name="query_logger")
 
-        # self.query_time = logging.getLogger("synth_time")
-        # fh_synth = logging.FileHandler("synth_time.log",mode='w')
-        # fh_synth.setLevel(level)
-        # self.synth_time.addHandler(fh_synth)
-        # self.synth_time.setLevel(level)
-
-        # self.query_time = logging.getLogger("query_logger")
-        # fh_query = logging.FileHandler("query_time.log",mode='w')
-        # fh_query.setLevel(level)
-        # self.query_time.addHandler(fh_query)
-        # self.query_time.info("just to fucking test")
-        # self.query_time.setLevel(level)
-
         self.pca = pca
 
         self.start_counts()
 
-        g = Graph()
+        self.logger.info(f"Original dataset contains {self.entity_count} entities and {self.edge_count} facts")
 
-        # self.step = 1
+        # scale the entity and edge count by the given size
         self.step = 1.0 / float(size)
+        self.num_synthetic_entities = int(self.entity_count / self.step)
+        self.num_synthetic_facts = int(self.edge_count / self.step)
 
-        self.logger.info("%d \tentities and %d \tfacts \t on original dataset" % (self.entity_count, self.edge_count))
-        self.synthetic_facts = self.edge_count
-        self.synthetic_entities = self.entity_count
-
-        self.synthetic_entities = int(self.entity_count / self.step)
-        self.synthetic_facts = int(self.edge_count / self.step)
+        # overwrite dynamic sizes with static sizes if they were set
         if number_of_entities is not None:
-            self.synthetic_entities = number_of_entities
+            self.num_synthetic_entities = number_of_entities
         if number_of_edges is not None:
-            self.synthetic_facts = number_of_edges
+            self.num_synthetic_facts = number_of_edges
 
+        # TODO: why is step scaled here?
         self.step /= 1.1
 
-        self.logger.info(
-            "%d \tentities and %d \tfacts \t on synthetic dataset" % (self.synthetic_entities, self.synthetic_facts))
+        self.logger.info(f"Synthetic dataset contains {self.num_synthetic_entities} entities and "
+                         f"{self.num_synthetic_facts} facts")
+
+        # TODO: what is this for?
+        # a list of relation ids of the quadratic relations
         quadratic_relations = self.check_for_quadratic_relations()
-        adjusted_dist_relations = self.adjust_quadratic_relation_distributions(deepcopy(self.relation_distribution),
-                                                                               quadratic_relations)
+        adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(
+            deepcopy(self.relation_distribution),
+            quadratic_relations)
+        # inverse relation to id dictionary (integer relation id points to relation URI)
+        self.relation_id_to_relation = {relation_id: relation for relation, relation_id in self.relation_to_id.items()}
 
-        self.inv_rel_dict = {k: v for v, k in self.relation_to_id.items()}
+        # print URIs of the quadratic relations
+        quadratic_relation_uris = [self.relation_id_to_relation[relation_id] for relation_id in quadratic_relations]
+        self.logger.debug(f"Quadratic relations: {quadratic_relation_uris}")
 
-        self.logger.debug("quadratic relations: %s" % [self.inv_rel_dict[r] for r in quadratic_relations])
-        g = self.synthesize_entity_types(g, self.entity_type_count)
-        g = self.synthesize_relations(g, self.relation_count)
-        g = self.synthesize_schema(g)
-        g, entities_types = self.synthesize_entities(g, self.synthetic_entities)
+        # initialize graph with the triples defining the entity types, relations and type hierarchies
+        graph = self.initialize_graph_with_metadata()
 
-        self.synthetic_id_to_type = {k: v for v in entities_types.keys() for k in entities_types[v]}
-        self.entity_types_to_entity_ids = entities_types
+        # insert synthetic entities whose entity types mirror the distribution of entity types
+        graph = self.insert_synthetic_entities(graph, self.num_synthetic_entities)
 
-        self.logger.debug("copying distributions")
-        self.d_r = deepcopy(adjusted_dist_relations)
-        self.d_dr = deepcopy(self.relation_domain_distribution)
-        self.d_rdr = deepcopy(self.relation_range_distribution)
+        self.logger.debug("Copying distributions...")
+        self.adjusted_relations_distribution_copy = deepcopy(adjusted_relations_distribution)
+        self.relation_domain_distribution_copy = deepcopy(self.relation_domain_distribution)
+        self.relation_range_distribution_copy = deepcopy(self.relation_range_distribution)
 
-        self.logger.debug("pruning distributions for domain and ranges of types without instances")
-        self.prune_distrbutions()
+        self.logger.debug("Pruning distributions for domains and ranges of types without instances...")
+        self.prune_distributions()
 
-        self.func_rel_subj_pool = self.functional_rels_subj_pool()
-        self.inv_func_rel_subj_pool = self.invfunctional_rels_subj_pool()
-        self.d_r = self.adjust_func_inv_func_relations()
+        # create entity id pools for domains and ranges of every relation with a score of 1 (i.e., no node has 2 or more
+        # incoming or 2 or more outgoing edges of this relation)
+        # outgoing edge => stored in domain; incoming edge => stored in range
+        # these pools contain the entity ids of entities that have the relation as outgoing or incoming edge
+        self.relation_id_to_subject_pool = self.functionality_entity_id_pools()
+        self.relation_id_to_object_pool = self.inverse_functionality_entity_id_pools()
 
-        self.saturated_subj = {r_i: {} for r_i in range(self.relation_count)}
-        self.saturated_obj = {r_i: {} for r_i in range(self.relation_count)}
+        # adjust the relation distribution with the subject and object pools
+        self.adjusted_relations_distribution_copy = self.adjust_relation_distribution_with_pools()
 
-        self.logger.debug("func rels subj pool = %s" % {r: len(ents) for r, ents in self.func_rel_subj_pool.items()})
-        self.logger.debug(
-            "inv func rels subj pool = %s" % {r: len(ents) for r, ents in self.inv_func_rel_subj_pool.items()})
+        # dictionary pointing from a relation id to a dictionary pointing from object types (multitypes) to a set of
+        # subject ids that are impossible to add as a fact with that object type (i.e., facts from that subject with
+        # that relation id can not exist with the given object type
+        self.saturated_subject_ids = {relation_id: {} for relation_id in range(self.relation_count)}
 
-        self.logger.info("synthesizing facts")
-        self.progress_bar = tqdm.tqdm(total=self.synthetic_facts)
+        # dictionary pointing from a relation id to a dictionary pointing from subject types (multitypes) to a set of
+        # objects ids that are impossible to add as a fact with that subject type (i.e., facts from that object with
+        # that relation id can not exist with the given subject type
+        self.saturated_object_ids = {relation_id: {} for relation_id in range(self.relation_count)}
+
+        # debug output of the pool sizes
+        num_subjects_for_relations = {relation_id: len(entity_ids)
+                                      for relation_id, entity_ids in self.relation_id_to_subject_pool.items()}
+        num_objects_for_relations = {relation_id: len(entity_ids)
+                                     for relation_id, entity_ids in self.relation_id_to_object_pool.items()}
+        self.logger.debug(f"subject pool = {num_subjects_for_relations}")
+        self.logger.debug(f"object pool = {num_objects_for_relations}")
+
+        self.logger.info("Synthesizing facts...")
+        # progress bar
+        self.progress_bar = tqdm.tqdm(total=self.num_synthetic_facts)
+        # start delta used for time logging
         self.start_t = datetime.datetime.now()
-        while self.count_facts < self.synthetic_facts and self.d_r:
-            r_i = choice(list(self.d_r.keys()), 1, p=normalize(self.d_r.values()))[0]
-            s_types = None
-            o_types = None
-            s_i = o_i = -1
-            self.logger.debug("relation %d = %s" % (r_i, self.inv_rel_dict[r_i]))
 
-            if r_i in self.d_dr and self.d_dr[r_i]:
-                s_types = choice(list(self.d_dr[r_i].keys()), 1, p=normalize(self.d_dr[r_i].values()))[0]
-                subject_entities = set(entities_types[s_types])
-                if r_i in self.func_rel_subj_pool:
-                    subject_entities = subject_entities.intersection(self.func_rel_subj_pool[r_i])
+        # initialize variables for pool sizes
+        number_of_possible_subjects = 0
+        number_of_possible_objects = 0
 
-                n_entities_subject = len(subject_entities)
-                self.logger.debug("s_types %s with %d entities in pool" % (str(s_types),n_entities_subject))
-                if n_entities_subject > 0 and s_types in self.d_rdr[r_i] and self.d_rdr[r_i][s_types]:
-                    o_types = choice(list(self.d_rdr[r_i][s_types].keys()), 1, p=normalize(self.d_rdr[r_i][s_types].values()))[
-                        0]
-                    object_entities = set(entities_types[o_types])
-                    if r_i in self.inv_func_rel_subj_pool:
-                        object_entities = object_entities.intersection(self.inv_func_rel_subj_pool[r_i])
+        # add facts until the desired fact count is reached and the adjusted relation distribution is not empty
+        while self.fact_count < self.num_synthetic_facts and self.adjusted_relations_distribution_copy:
+            # select the relation type of the new fact
+            relation_id = choice(
+                list(self.adjusted_relations_distribution_copy.keys()),
+                replace=True,
+                p=normalize(self.adjusted_relations_distribution_copy.values()))
+            selected_subject_type = None
+            selected_object_type = None
+            subject_id = -1
+            object_id = -1
+            self.logger.debug(f"Selected relation {relation_id} = {self.relation_id_to_relation[relation_id]}")
 
-                    if s_types in self.saturated_obj[r_i]:
-                        object_entities = object_entities - self.saturated_obj[r_i][s_types]
+            # only continue if the relation is still in the pruned relation and the domain distribution is not empty
+            if self.relation_domain_distribution_copy.get(relation_id):
+                # select the multi type of the subject
+                selected_subject_type = choice(
+                    list(self.relation_domain_distribution_copy[relation_id].keys()),
+                    replace=True,
+                    p=normalize(self.relation_domain_distribution_copy[relation_id].values()))
 
-                    if o_types in self.saturated_subj[r_i]:
-                        subject_entities = subject_entities - self.saturated_subj[r_i][o_types]
+                # entity ids of all synthetic entities that have the selected multi type
+                possible_subject_entities = set(self.entity_types_to_entity_ids[selected_subject_type])
+
+                # if the relation has a functionality score of 1.0 (i.e., it has a subject pool) choose only
+                # the possible entities that are also in the subject pool
+                if relation_id in self.relation_id_to_subject_pool:
+                    pool_subjects = self.relation_id_to_subject_pool[relation_id]
+                    possible_subject_entities = possible_subject_entities.intersection(pool_subjects)
+
+                number_of_possible_subjects = len(possible_subject_entities)
+                self.logger.debug(f"Selected subject type {selected_subject_type} with {number_of_possible_subjects}"
+                                  f"entities in subject pool")
+
+                # only continue if the relation has a non-empty pool of possible subjects and there is a range
+                # distribution for the selected subject type
+                if (
+                    number_of_possible_subjects > 0
+                    and self.relation_range_distribution_copy[relation_id].get(selected_subject_type)
+                ):
+                    # select the multi type of the object
+                    selected_object_type = choice(
+                        list(self.relation_range_distribution_copy[relation_id][selected_subject_type].keys()),
+                        replace=True,
+                        p=normalize(self.relation_range_distribution_copy[relation_id][selected_subject_type].values()))
+
+                    # entity ids of all synthetic entities that have the selected multi type
+                    possible_object_entities = set(self.entity_types_to_entity_ids[selected_object_type])
+
+                    # if the relation has an inverse functionality score of 1.0 (i.e., it has a subject pool) choose
+                    # only the possible entities that are also in the object pool
+                    if relation_id in self.relation_id_to_object_pool:
+                        pool_objects = self.relation_id_to_object_pool[relation_id]
+                        possible_object_entities = possible_object_entities.intersection(pool_objects)
+
+                    # if the selected subject type was already added to the list of saturated object ids, remove all
+                    # objects of that list from the list of possible object entities
+                    if selected_subject_type in self.saturated_object_ids[relation_id]:
+                        # these objects were not able to be added with the current relation and the selected subject
+                        # type
+                        saturated_objects = self.saturated_object_ids[relation_id][selected_subject_type]
+                        possible_object_entities = possible_object_entities - saturated_objects
+
+                    # if the selected object type was already added to the list of saturated subject ids, remove all
+                    # subjects of that list from the list of possible subject entities
+                    if selected_object_type in self.saturated_subject_ids[relation_id]:
+                        # these subjects were not able to be added with the current relation and the selected object
+                        # type
+                        saturated_subjects = self.saturated_subject_ids[relation_id][selected_object_type]
+                        possible_subject_entities = possible_subject_entities - saturated_subjects
 
                     # ensures non-reflexiveness by removing subject id from objects pool
-                    if not self.relation_id_to_reflexiveness[r_i] and s_i in object_entities:
-                        object_entities.remove(s_i)
+                    if not self.relation_id_to_reflexiveness[relation_id] and subject_id in possible_object_entities:
+                        possible_object_entities.remove(subject_id)
 
-                    n_entities_subject = len(subject_entities)
-                    n_entities_object = len(object_entities)
-                    self.logger.debug("o_types %s with %d entities in pool" % (str(o_types), n_entities_object))
-                    if n_entities_object > 0 and n_entities_subject > 0:
+                    number_of_possible_subjects = len(possible_subject_entities)
+                    number_of_possible_objects = len(possible_object_entities)
+                    self.logger.debug(
+                        f"Selected object type {selected_object_type} with {number_of_possible_objects}"
+                        f"entities in object pool")
 
-                        subject_model = self.select_subject_model(r_i, s_types)
-                        s_pool_i = self.select_instance(n_entities_subject, subject_model)
-                        s_i = list(subject_entities)[s_pool_i]
+                    # only continue if the relation has non-empty pools of possible subjects and objects
+                    if number_of_possible_objects > 0 and number_of_possible_subjects > 0:
+                        # TODO: what does this model do (implemented in emi model)
+                        subject_model = self.select_subject_model(relation_id, selected_subject_type)
 
-                        object_model = self.select_object_model(r_i, s_types, o_types)
-                        o_pool_i = self.select_instance(n_entities_object, object_model)
-                        o_i = list(object_entities)[o_pool_i]
+                        selected_subject_index = self.select_instance(number_of_possible_subjects, subject_model)
+                        subject_id = list(possible_subject_entities)[selected_subject_index]
 
-                        s = URIEntity(s_i).uri
-                        o = URIEntity(o_i).uri
-                        p = URIRelation(r_i).uri
-                        fact = (s, p, o)
-                        self.logger.debug("try to add triple (e%d,r%d,e%d)" % (s_i,r_i,o_i))
+                        # TODO: what does this model do (implemented in emi model)
+                        object_model = self.select_object_model(relation_id,
+                                                                selected_subject_type,
+                                                                selected_object_type)
+                        selected_object_index = self.select_instance(number_of_possible_objects, object_model)
+                        object_id = list(possible_object_entities)[selected_object_index]
+
+                        rdf_subject = URIEntity(subject_id).uri
+                        rdf_object = URIEntity(object_id).uri
+                        rdf_relation = URIRelation(relation_id).uri
+                        self.logger.debug(f"Trying to add triple ({subject_id}, {relation_id}, {object_id})")
                         try:
-                            o_offset, s_offset = 0, 0
+                            subject_offset = 0
+                            object_offset = 0
+                            # object_offset, subject_offset = 0, 0
+
+                            # choose randomly with a 50:50 chance for if or else
                             if random.random() < 0.5:
-                                while not self.add_fact(g, (s, p, o)) and o_offset < len(object_entities):
-                                    # try to add triple with other objects
-                                    o_offset += 1
-                                    o_i = list(object_entities)[(o_pool_i + o_offset) % len(object_entities)]
-                                    o = URIEntity(o_i).uri
+                                # FIXME: somehow the synthesizing gets stuck in a loop
 
-                                if o_offset >= len(object_entities):  # fact could not be added
-                                    # impossible to add facts for r_i with subject s_i
-                                    if o_types not in self.saturated_subj[r_i]:
-                                        self.saturated_subj[r_i][o_types] = set()
-                                    self.saturated_subj[r_i][o_types].add(s_i)
+                                # continue as long as the fact was not added and the object_offset stays in its bounds
+                                while (
+                                    not self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
+                                    and object_offset < len(possible_object_entities)
+                                ):
+                                    # try adding the fact with the next possible object
+                                    object_offset += 1
+                                    new_object_index = selected_object_index + object_offset
+                                    new_object_index = new_object_index % len(possible_object_entities)
+                                    object_id = list(possible_object_entities)[new_object_index]
+                                    rdf_object = URIEntity(object_id).uri
+
+                                # the fact could not be added
+                                if object_offset >= len(possible_object_entities):
+                                    # it's impossible to add facts for relation_id with given subject "subject_id"
+                                    # add the impossible object type to the collection of saturated subject ids
+                                    if selected_object_type not in self.saturated_subject_ids[relation_id]:
+                                        self.saturated_subject_ids[relation_id][selected_object_type] = set()
+
+                                    # the current subject can't be added with the current relation and the selected
+                                    # object type
+                                    self.saturated_subject_ids[relation_id][selected_object_type].add(subject_id)
                             else:
-                                o_i = list(object_entities)[o_pool_i]
-                                o = URIEntity(o_i).uri
-                                while not self.add_fact(g, (s, p, o)) and s_offset < len(subject_entities):
-                                    # try to add fact with other subjects
-                                    s_offset += 1
-                                    s_i = list(subject_entities)[(s_pool_i + s_offset) % len(subject_entities)]
-                                    s = URIEntity(s_i).uri
-                                if s_offset >= len(subject_entities):
-                                    # impossible to add facts for r_i with object o_i
-                                    if s_types not in self.saturated_obj[r_i]:
-                                        self.saturated_obj[r_i][s_types] = set()
-                                    self.saturated_obj[r_i][s_types].add(o_i)
+                                # FIXME: somehow the synthesizing gets stuck in a loop
 
-                            if o_offset < len(object_entities) and s_offset < len(subject_entities):
-                                self.update_distributions(r_i, s_types, o_types)
-                                self.produce_rules(g, r_i, (s, p, o))
-                                self.update_pools(r_i, s_i, o_i)
+                                # this line should be unnecessary
+                                object_id = list(possible_object_entities)[selected_object_index]
+                                rdf_object = URIEntity(object_id).uri
+
+                                # continue as long as the fact was not added and the subject_offset stays in its bounds
+                                while not (
+                                    self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
+                                    and subject_offset < len(possible_subject_entities)
+                                ):
+                                    # try adding fact with the next possible subjects
+                                    subject_offset += 1
+                                    new_subect_index = selected_subject_index + subject_offset
+                                    new_subect_index = new_subect_index % len(possible_subject_entities)
+                                    subject_id = list(possible_subject_entities)[new_subect_index]
+                                    rdf_subject = URIEntity(subject_id).uri
+
+                                # the fact could not be added
+                                if subject_offset >= len(possible_subject_entities):
+                                    # it's impossible to add facts for relation_id with given object "object_id"
+                                    # add the impossible subject type to the collection of saturated object ids
+                                    if selected_subject_type not in self.saturated_object_ids[relation_id]:
+                                        self.saturated_object_ids[relation_id][selected_subject_type] = set()
+
+                                    # the current object can't be added with the current relation and the selected
+                                    # subject type
+                                    self.saturated_object_ids[relation_id][selected_subject_type].add(object_id)
+
+                            # if both object and subject were successfully selected (i.e., the offsets stayed in
+                            # their bounds
+                            if (
+                                object_offset < len(possible_object_entities)
+                                and subject_offset < len(possible_subject_entities)
+                            ):
+                                # reduce the distributions of the selected types since the fact was added successfully
+                                self.update_distributions(relation_id, selected_subject_type, selected_object_type)
+
+                                # TODO
+                                self.produce_rules(graph, relation_id, (rdf_subject, rdf_relation, rdf_object))
+
+                                # remove the subject and object from the respective pools of the relation after the fact
+                                # was added successfully
+                                # also remove the relation from the distributions if one of the pools ends up empty
+                                self.update_pools(relation_id, subject_id, object_id)
                                 continue
                         except KeyError:
-                            self.key_error_count += 1
+                            self.number_of_key_errors += 1
                     else:
-                        self.count_no_entities_of_type += 1
+                        self.number_of_empty_pool_occurrences += 1
                 else:
-                    self.count_exhausted_facts += 1
+                    self.number_of_facts_with_empty_distributions += 1
             else:
-                self.count_exhausted_facts += 1
+                self.number_of_facts_with_empty_distributions += 1
 
-            if n_entities_subject == 0:
-                self.logger.debug("deleting relation domain entries for relation %d and subj types %s"%(r_i,str(s_types)))
-                self.delete_relation_domain_entries(r_i, s_types)
-            if n_entities_object == 0:
+            if number_of_possible_subjects == 0:
+                self.logger.debug(f"Deleting relation domain entries for relation {relation_id} and "
+                                  f"subject type {selected_subject_type}")
+                self.delete_relation_domain_entries(relation_id, selected_subject_type)
+
+            if number_of_possible_objects == 0:
                 self.logger.debug(
-                    "deleting relation range entries for relation %d and subj types %s and object types %s" % (r_i, str(s_types), str(o_types)))
-                self.delete_relation_domain_range_entries(r_i, s_types, o_types)
-            self.delete_empty_entries(r_i, s_types)
-            self.update_pools(r_i, s_i, o_i)
+                    f"Deleting relation range entries for relation {relation_id}, subject type {selected_subject_type} "
+                    f"and object type {selected_object_type}")
+                self.delete_relation_domain_range_entries(relation_id, selected_subject_type, selected_object_type)
+
+            # TODO
+            self.delete_empty_entries(relation_id, selected_subject_type)
+            # TODO
+            self.update_pools(relation_id, subject_id, object_id)
+
             self.print_synthesis_details()
 
-        self.logger.debug("synthesized facts = %d from %d" % (self.count_facts, self.synthetic_facts))
-        return g
+        self.logger.debug(f"Synthesized {self.fact_count} facts of {self.num_synthetic_facts} synthesized facts")
+        return graph
