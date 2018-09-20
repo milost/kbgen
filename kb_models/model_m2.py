@@ -41,11 +41,8 @@ class KBModelM2(KBModelM1):
         :param relation_id_to_reflexiveness: points from relation id to a boolean indicating if any reflexive edge of
                                              that relation type exists
         """
-        assert type(m1_model) == KBModelM1
+        assert isinstance(m1_model, KBModelM1), f"Model is of type {type(m1_model)} but needs to be of type KBModelM1"
         # initialize the M1 model data with the values of the passed M1 model
-        # TODO does the init call have side-effects that the __dict__ way does not have
-        # for k, v in naive_model.__dict__.items():
-        #     self.__dict__[k] = v
         super(KBModelM2, self).__init__(
             entity_type_hierarchy=m1_model.entity_type_hierarchy,
             object_property_hierarchy=m1_model.object_property_hierarchy,
@@ -164,35 +161,6 @@ class KBModelM2(KBModelM1):
         # increment the counter by the inverse boolean value (+1 if it is reflexive, +0 if is not reflexive)
         self.num_facts_violating_non_reflexiveness += not is_not_reflexive
         return is_not_reflexive
-
-    def functional_rels_subj_pool(self):
-        """
-        TODO: used in M3 model
-        :return:
-        """
-        func_rels_subj_pool = {}
-        for r, func in self.functionalities.items():
-            if func == 1 and r in self.d_dr:
-                func_rels_subj_pool[r] = set()
-                for domain in self.d_dr[r]:
-                    if domain in self.entity_types_to_entity_ids.keys():
-                        func_rels_subj_pool[r] = func_rels_subj_pool[r].union(set(self.entity_types_to_entity_ids[domain]))
-        return func_rels_subj_pool
-
-    def invfunctional_rels_subj_pool(self):
-        """
-        TODO: used in M3 model
-        :return:
-        """
-        invfunc_rels_subj_pool = {}
-        for r, inv_func in self.inverse_functionalities.items():
-            if inv_func == 1 and r in self.d_rdr:
-                invfunc_rels_subj_pool[r] = set()
-                for domain in self.d_dr[r]:
-                    for range in self.d_rdr[r][domain]:
-                        if range in self.entity_types_to_entity_ids.keys():
-                            invfunc_rels_subj_pool[r] = invfunc_rels_subj_pool[r].union(set(self.entity_types_to_entity_ids[range]))
-        return invfunc_rels_subj_pool
 
     def is_fact_valid(self, graph: Graph, relation_id: int, fact: Tuple[str, str, str]):
         # if the functionality score is larger than one, an entity can have more than one outgoing edge
