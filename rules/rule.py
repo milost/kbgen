@@ -50,6 +50,7 @@ class Rule(object):
             if ant.relation != p:
                 patterns += ant.sparql_patterns()
 
+        # TODO fix invalid < and > symbols in uri
         s_ent = "<"+s+">"
         o_ent = "<"+o+">"
 
