@@ -24,7 +24,6 @@ class KBModelM3(KBModelM2):
       sure the original distribution is not disturbed.
     - Horn rules are assumed to be produced by AMIE
     """
-
     def __init__(self, m2_model: KBModelM2, rules: RuleSet):
         """
         Create an M3 model based on an M2 model and a rule set of horn rules (produces by AMIE).
@@ -32,7 +31,7 @@ class KBModelM3(KBModelM2):
         :param rules: Horn rules that will be used when synthesizing a knowledge base. Currenlty it is assumed that they
                       are produced by AMIE TODO: why this assumption
         """
-        isinstance(m2_model, KBModelM2), f"Model is of type {type(m2_model)} but needs to be of type KBModelM1"
+        assert isinstance(m2_model, KBModelM2), f"Model is of type {type(m2_model)} but needs to be of type KBModelM2"
         super(KBModelM3, self).__init__(
             m1_model=m2_model,
             functionalities=m2_model.functionalities,
@@ -111,7 +110,9 @@ class KBModelM3(KBModelM2):
         plt.show()
 
     def start_counts(self):
-        """Initializes various counts"""
+        """
+        Initializes various counts.
+        """
         # counters from M1 model
         self.fact_count = 0
         self.duplicate_fact_count = 0
@@ -217,8 +218,6 @@ class KBModelM3(KBModelM2):
         :param object_type: multitype of the object
         """
         step = float(self.step)
-
-        # FIXME: somehow the synthesizing gets stuck in a loop
 
         # if the relation is still in the pruned distributions
         if relation_id in self.adjusted_relations_distribution_copy:
@@ -339,10 +338,16 @@ class KBModelM3(KBModelM2):
         :param relation_id: the relation whose domain type is deleted
         :param domain: the domain that will be removed from the original distributions
         """
-        if self.relation_domain_distribution_copy.get(relation_id, {}).get(domain) is not None:
+        if (
+            relation_id in self.relation_domain_distribution_copy
+            and domain in self.relation_domain_distribution_copy[relation_id]
+        ):
             del self.relation_domain_distribution_copy[relation_id][domain]
 
-        if self.relation_range_distribution.get(relation_id, {}).get(domain) is not None:
+        if (
+            relation_id in self.relation_range_distribution_copy
+            and domain in self.relation_range_distribution_copy[relation_id]
+        ):
             del self.relation_range_distribution_copy[relation_id][domain]
 
     def delete_relation_domain_range_entries(self,
@@ -350,13 +355,17 @@ class KBModelM3(KBModelM2):
                                              domain: MultiType,
                                              range_of_domain: MultiType) -> None:
         """
-        Delete the given range from the range distribution
+        Check that the given range exists in the range distribution with the given relation and domain and delete it if
+        it does.
         :param relation_id: id of the relation whose range is deleted
         :param domain: domain whose range is deleted
         :param range_of_domain: the range of the domain to delete
         """
-        # check that the range exists in the distributions and delete it if it does
-        if self.relation_range_distribution_copy.get(relation_id, {}).get(domain, {}).get(range_of_domain) is not None:
+        if (
+            relation_id in self.relation_range_distribution_copy
+            and domain in self.relation_range_distribution_copy[relation_id]
+            and range_of_domain in self.relation_range_distribution_copy[relation_id][domain]
+        ):
             del self.relation_range_distribution_copy[relation_id][domain][range_of_domain]
 
     def delete_empty_entries(self, relation_id: id, subject_type: MultiType) -> None:
@@ -403,9 +412,6 @@ class KBModelM3(KBModelM2):
         :param subject_id: the id of the subject
         :param object_id: the id of the object
         """
-
-        # FIXME: somehow the synthesizing gets stuck in a loop
-
         # the number of edge occurrences of a relation and that are removed from distributions due to an empty subject
         # or empty object pool
         number_of_removed_occurrences = 0
@@ -487,7 +493,7 @@ class KBModelM3(KBModelM2):
                     self.adjusted_relations_distribution_copy[relation_id] = num_objects_in_pool
                     number_removed_occurrences += diff
 
-            # TODO: is the indentation correct?
+            # TODO: is the indentation correct? (it was copied correctly)
             if number_removed_occurrences > 0:
                 # the fact count is incremented in KBModelM1::add_fact
                 # TODO: why this scaling
@@ -574,12 +580,7 @@ class KBModelM3(KBModelM2):
         :param pca: boolean if PCA should be used. This parameter is not used
         :return: the synthesized graph as rdf graph object
         """
-        # should no longer be needed
-        # # initialize variables not used in this model but in the super class
-        # self.fact_count = 0
-        # self.duplicate_fact_count = 0
-
-        print("Synthesizing HORN model...")
+        print("Synthesizing HORN model")
 
         level = logging.DEBUG if debug else logging.INFO
         self.logger = create_logger(level, name="kbgen")
@@ -615,6 +616,7 @@ class KBModelM3(KBModelM2):
         adjusted_relations_distribution = self.adjust_quadratic_relation_distributions(
             deepcopy(self.relation_distribution),
             quadratic_relations)
+
         # inverse relation to id dictionary (integer relation id points to relation URI)
         self.relation_id_to_relation = {relation_id: relation for relation, relation_id in self.relation_to_id.items()}
 
@@ -688,7 +690,10 @@ class KBModelM3(KBModelM2):
             self.logger.debug(f"Selected relation {relation_id} = {self.relation_id_to_relation[relation_id]}")
 
             # only continue if the relation is still in the pruned relation and the domain distribution is not empty
-            if self.relation_domain_distribution_copy.get(relation_id):
+            if (
+                relation_id in self.relation_domain_distribution_copy
+                and self.relation_domain_distribution_copy[relation_id]
+            ):
                 # select the multi type of the subject
                 selected_subject_type = choice(
                     list(self.relation_domain_distribution_copy[relation_id].keys()),
@@ -712,7 +717,8 @@ class KBModelM3(KBModelM2):
                 # distribution for the selected subject type
                 if (
                     number_of_possible_subjects > 0
-                    and self.relation_range_distribution_copy[relation_id].get(selected_subject_type)
+                    and selected_subject_type in self.relation_range_distribution_copy[relation_id]
+                    and self.relation_range_distribution_copy[relation_id][selected_subject_type]
                 ):
                     # select the multi type of the object
                     selected_object_type = choice(
@@ -757,12 +763,15 @@ class KBModelM3(KBModelM2):
 
                     # only continue if the relation has non-empty pools of possible subjects and objects
                     if number_of_possible_objects > 0 and number_of_possible_subjects > 0:
+
+                        # choose a subject from the pool of possible subjects
                         # TODO: what does this model do (implemented in emi model)
                         subject_model = self.select_subject_model(relation_id, selected_subject_type)
 
                         selected_subject_index = self.select_instance(number_of_possible_subjects, subject_model)
                         subject_id = list(possible_subject_entities)[selected_subject_index]
 
+                        # choose an object from the pool of possible objects
                         # TODO: what does this model do (implemented in emi model)
                         object_model = self.select_object_model(relation_id,
                                                                 selected_subject_type,
@@ -770,6 +779,7 @@ class KBModelM3(KBModelM2):
                         selected_object_index = self.select_instance(number_of_possible_objects, object_model)
                         object_id = list(possible_object_entities)[selected_object_index]
 
+                        # create the actual entities
                         rdf_subject = URIEntity(subject_id).uri
                         rdf_object = URIEntity(object_id).uri
                         rdf_relation = URIRelation(relation_id).uri
@@ -777,11 +787,9 @@ class KBModelM3(KBModelM2):
                         try:
                             subject_offset = 0
                             object_offset = 0
-                            # object_offset, subject_offset = 0, 0
 
                             # choose randomly with a 50:50 chance for if or else
                             if random.random() < 0.5:
-                                # FIXME: somehow the synthesizing gets stuck in a loop
 
                                 # continue as long as the fact was not added and the object_offset stays in its bounds
                                 while (
@@ -806,15 +814,13 @@ class KBModelM3(KBModelM2):
                                     # object type
                                     self.saturated_subject_ids[relation_id][selected_object_type].add(subject_id)
                             else:
-                                # FIXME: somehow the synthesizing gets stuck in a loop
-
                                 # this line should be unnecessary
                                 object_id = list(possible_object_entities)[selected_object_index]
                                 rdf_object = URIEntity(object_id).uri
 
                                 # continue as long as the fact was not added and the subject_offset stays in its bounds
-                                while not (
-                                    self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
+                                while (
+                                    not self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
                                     and subject_offset < len(possible_subject_entities)
                                 ):
                                     # try adding fact with the next possible subjects
@@ -851,7 +857,10 @@ class KBModelM3(KBModelM2):
                                 # was added successfully
                                 # also remove the relation from the distributions if one of the pools ends up empty
                                 self.update_pools(relation_id, subject_id, object_id)
+
+                                # TODO
                                 continue
+
                         except KeyError:
                             self.number_of_key_errors += 1
                     else:
@@ -861,20 +870,23 @@ class KBModelM3(KBModelM2):
             else:
                 self.number_of_facts_with_empty_distributions += 1
 
+            # delete the chosen domain from the domain distribution because its subject pool is empty
             if number_of_possible_subjects == 0:
                 self.logger.debug(f"Deleting relation domain entries for relation {relation_id} and "
                                   f"subject type {selected_subject_type}")
                 self.delete_relation_domain_entries(relation_id, selected_subject_type)
 
+            # delete the chosen range from the range distribution because its object pool is empty
             if number_of_possible_objects == 0:
                 self.logger.debug(
                     f"Deleting relation range entries for relation {relation_id}, subject type {selected_subject_type} "
                     f"and object type {selected_object_type}")
                 self.delete_relation_domain_range_entries(relation_id, selected_subject_type, selected_object_type)
 
-            # TODO
+            # TODO: why here
             self.delete_empty_entries(relation_id, selected_subject_type)
-            # TODO
+
+            # TODO: why here
             self.update_pools(relation_id, subject_id, object_id)
 
             self.print_synthesis_details()

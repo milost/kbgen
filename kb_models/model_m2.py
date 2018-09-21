@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Set
 
 from load_tensor_tools import loadGraphNpz
 from kb_models.model_m1 import KBModelM1
