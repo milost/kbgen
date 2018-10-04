@@ -47,16 +47,16 @@ class Rule(object):
 
     def antecedents_patterns(self,
                              graph: Graph,
-                             rdf_subject: URIEntity,
-                             rdf_relation: URIRelation,
-                             rdf_object: URIEntity) -> Tuple[str, Optional[Literal]]:
+                             subject_uri: URIRef,
+                             relation_uri: URIRef,
+                             object_uri: URIRef) -> Tuple[str, Optional[Literal]]:
         """
         Creates the SPARQL pattern to filter the graph according to the premise of this rule (i.e., all literals in the
         premise).
         :param graph: the synthesized graph
-        :param rdf_subject: uri of the subject in the new fact
-        :param rdf_relation: uri of the relation in the new fact
-        :param rdf_object: uri of the object in the new fact
+        :param subject_uri: uri of the subject in the new fact
+        :param relation_uri: uri of the relation in the new fact
+        :param object_uri: uri of the object in the new fact
         :return: tuple of the full SPARQL pattern of the premise and the literal of the premise with a matching relation
         type as the new fact, if such a literal exists
         """
@@ -73,10 +73,6 @@ class Rule(object):
         # the literal that matches the new fact
         matched_literal = None
 
-        # TODO: why not this
-        # relation_uri = rdf_relation.uri
-        relation_uri = URIRef(rdf_relation)
-
         # test if a literal in the premise handles the same relation that is in the new fact
         # save the literal and its subject and object if such an literal exists
         for antecedent in self.antecedents:
@@ -91,11 +87,11 @@ class Rule(object):
         # exclude the literal with a matching relation type since it is already satisfied by the new fact that will be
         # added
         for antecedent in self.antecedents:
-            if antecedent.relation != rdf_relation:
+            if antecedent.relation != relation_uri:
                 patterns += antecedent.sparql_patterns()
 
-        subject_entity = f"<{rdf_subject}>"
-        object_entity = f"<{rdf_object}>"
+        subject_entity = f"<{subject_uri}>"
+        object_entity = f"<{object_uri}>"
 
         if matched_literal_subject is not None:
             patterns = patterns.replace(matched_literal_subject, subject_entity)
@@ -107,19 +103,19 @@ class Rule(object):
 
     def produce(self,
                 graph: Graph,
-                rdf_subject: URIEntity,
-                rdf_relation: URIRelation,
-                rdf_object: URIEntity) -> List[Tuple[URIEntity, URIRef, URIEntity]]:
+                subject_uri: URIRef,
+                relation_uri: URIRef,
+                object_uri: URIRef) -> List[Tuple[URIRef, URIRef, URIRef]]:
         """
         Produces new facts according to this rule given a new input fact.
         :param graph: the synthesized graph
-        :param rdf_subject: uri of the subject in the new fact
-        :param rdf_relation: uri of the relation in the new fact
-        :param rdf_object: uri of the object in the new fact
+        :param subject_uri: uri of the subject in the new fact
+        :param relation_uri: uri of the relation in the new fact
+        :param object_uri: uri of the object in the new fact
         :return: a list of facts produced by this rule
         """
         # contains the facts produced by this rule
-        new_facts: List[Tuple[URIEntity, URIRef, URIEntity]] = []
+        new_facts: List[Tuple[URIRef, URIRef, URIRef]] = []
 
         # QUESTION: apparently AMIE rules can only have one triple in their conclusion. Is this actually the case?
 
@@ -139,14 +135,14 @@ class Rule(object):
                 self.antecedents[0].literal_subject_id == self.consequents[0].literal_subject_id
                 and self.antecedents[0].literal_object_id == self.consequents[0].literal_object_id
             ):
-                new_facts.append((rdf_subject, new_relation_uri, rdf_object))
+                new_facts.append((subject_uri, new_relation_uri, object_uri))
 
             # if the subject and object of the premise are swapped in the conclusion
             if (
                 self.antecedents[0].literal_subject_id == self.consequents[0].literal_object_id
                 and self.antecedents[0].literal_object_id == self.consequents[0].literal_subject_id
             ):
-                new_facts.append((rdf_object, new_relation_uri, rdf_subject))
+                new_facts.append((object_uri, new_relation_uri, subject_uri))
 
             return new_facts
 
@@ -156,7 +152,7 @@ class Rule(object):
 
             # build the where part of the sparql query and find the literal matching the relation type of the input fact
             # if such a literal exists
-            query_patterns, new_literal = self.antecedents_patterns(graph, rdf_subject, rdf_relation, rdf_object)
+            query_patterns, new_literal = self.antecedents_patterns(graph, subject_uri, relation_uri, object_uri)
 
             # if the patterns of the sparql query do not contain either the subject or the object, only query for
             # possible solutions to the query
@@ -200,10 +196,10 @@ class Rule(object):
                 # select the subject or the object of the premise as object for new fact depending on the naming
                 # i.e., a subject_id == 2 represents a "b", therefore the subject would be the new object
                 if new_literal.literal_subject_id == 2:
-                    new_object = rdf_subject
+                    new_object = subject_uri
                 else:
                     # the object in the premise was named "b"
-                    new_object = rdf_object
+                    new_object = object_uri
 
                 # add every result subject with the previously determined object as new fact with the relation of the
                 # conclusion
@@ -216,10 +212,10 @@ class Rule(object):
                 # select the subject or the object of the premise as subject for new fact depending on the naming
                 # i.e., a subject_id == 1 represents an "a", therefore the subject would be the new subject
                 if new_literal.literal_subject_id == 1:
-                    new_subject = rdf_subject
+                    new_subject = subject_uri
                 else:
                     # the object in the premise was named "a"
-                    new_subject = rdf_object
+                    new_subject = object_uri
 
                 # add every result object with the previously determined subject as new fact with the relation of the
                 # conclusion
@@ -232,14 +228,14 @@ class Rule(object):
                 # if the subject was named "a" and the object named "b", the new fact will have the same subject and
                 # object. otherwise they are swapped
                 if new_literal.literal_subject_id == 1:
-                    new_subject = rdf_subject
+                    new_subject = subject_uri
                 else:
-                    new_subject = rdf_object
+                    new_subject = object_uri
 
                 if new_literal.literal_object_id == 2:
-                    new_object = rdf_object
+                    new_object = object_uri
                 else:
-                    new_object = rdf_subject
+                    new_object = subject_uri
 
                 # add the new fact with the original subject and object (possibly swapped) and the relation of the
                 # conclusion

@@ -156,7 +156,7 @@ class KBModelM3(KBModelM2):
     def produce_rules(self,
                       graph: Graph,
                       relation_id: int,
-                      fact: Tuple[URIEntity, URIRelation, URIEntity],
+                      fact: Tuple[URIRef, URIRef, URIRef],
                       recursion_count: int = 0):
         """
         Checks if a new fact added trigger any horn rules to generate new facts
@@ -165,7 +165,7 @@ class KBModelM3(KBModelM2):
         :param fact: added fact
         :param recursion_count: recursion count (tracks the recursion depth)
         """
-        rdf_subject, rdf_relation, rdf_object = fact
+        subject_uri, relation_uri, object_uri = fact
         # TODO what is stored in self.rules.rules_per_relation
         if recursion_count < self.max_recursion_count and relation_id in self.rules.rules_per_relation:
             rules = self.rules.rules_per_relation[relation_id]
@@ -174,15 +174,15 @@ class KBModelM3(KBModelM2):
                 rand_number = random.random()
                 if (self.pca and rand_number < rule.pca_confidence) or (not self.pca and rand_number < rule.std_confidence):
                     start_t = datetime.datetime.now()
-                    new_facts = rule.produce(graph, rdf_subject, rdf_relation, rdf_object)
+                    new_facts = rule.produce(graph, subject_uri, relation_uri, object_uri)
                     delta = datetime.datetime.now() - start_t
 
                     rule_added_facts = 0
                     for new_fact in new_facts:
-                        rdf_subject, rdf_relation, rdf_object = new_fact
-                        subject_id = URIEntity.extract_id(rdf_subject).id
-                        object_id = URIEntity.extract_id(rdf_object).id
-                        relation_id = URIRelation.extract_id(rdf_relation).id
+                        subject_uri, relation_uri, object_uri = new_fact
+                        subject_id = URIEntity.extract_id(subject_uri).id
+                        object_id = URIEntity.extract_id(object_uri).id
+                        relation_id = URIRelation.extract_id(relation_uri).id
 
                         subject_type = self.synthetic_id_to_type[subject_id]
                         object_type = self.synthetic_id_to_type[object_id]
@@ -780,9 +780,9 @@ class KBModelM3(KBModelM2):
                         object_id = list(possible_object_entities)[selected_object_index]
 
                         # create the actual entities
-                        rdf_subject = URIEntity(subject_id).uri
-                        rdf_object = URIEntity(object_id).uri
-                        rdf_relation = URIRelation(relation_id).uri
+                        subject_uri = URIEntity(subject_id).uri
+                        object_uri = URIEntity(object_id).uri
+                        relation_uri = URIRelation(relation_id).uri
                         self.logger.debug(f"Trying to add triple ({subject_id}, {relation_id}, {object_id})")
                         try:
                             subject_offset = 0
@@ -793,7 +793,7 @@ class KBModelM3(KBModelM2):
 
                                 # continue as long as the fact was not added and the object_offset stays in its bounds
                                 while (
-                                    not self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
+                                    not self.add_fact(graph, (subject_uri, relation_uri, object_uri))
                                     and object_offset < len(possible_object_entities)
                                 ):
                                     # try adding the fact with the next possible object
@@ -801,7 +801,7 @@ class KBModelM3(KBModelM2):
                                     new_object_index = selected_object_index + object_offset
                                     new_object_index = new_object_index % len(possible_object_entities)
                                     object_id = list(possible_object_entities)[new_object_index]
-                                    rdf_object = URIEntity(object_id).uri
+                                    object_uri = URIEntity(object_id).uri
 
                                 # the fact could not be added
                                 if object_offset >= len(possible_object_entities):
@@ -816,11 +816,11 @@ class KBModelM3(KBModelM2):
                             else:
                                 # this line should be unnecessary
                                 object_id = list(possible_object_entities)[selected_object_index]
-                                rdf_object = URIEntity(object_id).uri
+                                object_uri = URIEntity(object_id).uri
 
                                 # continue as long as the fact was not added and the subject_offset stays in its bounds
                                 while (
-                                    not self.add_fact(graph, (rdf_subject, rdf_relation, rdf_object))
+                                    not self.add_fact(graph, (subject_uri, relation_uri, object_uri))
                                     and subject_offset < len(possible_subject_entities)
                                 ):
                                     # try adding fact with the next possible subjects
@@ -828,7 +828,7 @@ class KBModelM3(KBModelM2):
                                     new_subect_index = selected_subject_index + subject_offset
                                     new_subect_index = new_subect_index % len(possible_subject_entities)
                                     subject_id = list(possible_subject_entities)[new_subect_index]
-                                    rdf_subject = URIEntity(subject_id).uri
+                                    subject_uri = URIEntity(subject_id).uri
 
                                 # the fact could not be added
                                 if subject_offset >= len(possible_subject_entities):
@@ -851,7 +851,7 @@ class KBModelM3(KBModelM2):
                                 self.update_distributions(relation_id, selected_subject_type, selected_object_type)
 
                                 # TODO
-                                self.produce_rules(graph, relation_id, (rdf_subject, rdf_relation, rdf_object))
+                                self.produce_rules(graph, relation_id, (subject_uri, relation_uri, object_uri))
 
                                 # remove the subject and object from the respective pools of the relation after the fact
                                 # was added successfully

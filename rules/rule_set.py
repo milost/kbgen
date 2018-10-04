@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 from rdflib import URIRef
 
@@ -6,13 +6,26 @@ from rules import Rule
 
 
 class RuleSet(object):
-    def __init__(self, rules=None):
-        self.rules = rules or []
-        self.rules_per_relation = {}
-        for rule in rules:
+    def __init__(self, rules: List[Rule] = None):
+        """
+        Creates a set of rules given a list of rules. This object knows which relation types are affected by which
+        rules.
+        :param rules: the AMIE rules that were parsed from a file
+        """
+        self.rules: List[Rule] = rules or []
+
+        # dictionary that contains the rules grouped by the relation types that they have in their premise
+        # a rule that has multiple literals in its premise will be in the both lists for the different relation types
+        # in it a relation id points to a list of rules that all affect this relation type (i.e., a new fact with this
+        # relation type needs to be checked against all the rules in that list)
+        self.rules_per_relation: Dict[int, List[Rule]] = {}
+
+        for rule in self.rules:
             for literal in rule.antecedents:
+
                 if literal.relation.id not in self.rules_per_relation:
                     self.rules_per_relation[literal.relation.id] = []
+
                 self.rules_per_relation[literal.relation.id].append(rule)
 
     @classmethod
