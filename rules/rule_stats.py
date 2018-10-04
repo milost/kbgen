@@ -8,9 +8,9 @@ from rules import Literal, Rule
 
 
 class RuleStats(Rule):
-    def __init__(self, antecedents=None, consequents=None, head_cov=nan, std_conf=nan, pca_conf=nan, pos_expl=nan,
+    def __init__(self, antecedents=None, consequents=None, head_cov=nan, std_confidence=nan, pca_confidence=nan, pos_expl=nan,
                  std_body_sz=nan, pca_body_sz=nan, func_var=nan, std_low_bd=nan, pca_low_bd=nan, pca_conf_est=nan):
-        super(RuleStats, self).__init__(antecedents, consequents, std_conf, pca_conf)
+        super(RuleStats, self).__init__(antecedents, consequents, std_confidence, pca_confidence)
         self.head_cov = head_cov
         self.pos_expl = pos_expl
         self.std_body_sz = std_body_sz
