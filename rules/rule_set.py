@@ -16,10 +16,18 @@ class RuleSet(object):
                 self.rules_per_relation[literal.relation.id].append(rule)
 
     @classmethod
-    def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]):
+    def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
+        """
+        Parses AMIE rules in the given file, translates relation URIs to relation ids and creates a rule set object
+        from them.
+        :param rules_path: path to the file containing AMIE rules
+        :param relation_to_id: dictionary pointing from relation URIs to the ids used in the models
+        :return: rule set object containing the parsed AMIE rules
+        """
         rules = []
         with open(rules_path, "r") as file:
             for line in file:
+                # the line contains an AMIE rule that needs to be parsed
                 if line.startswith("?"):
                     rule = Rule.parse_amie(line, relation_to_id)
                     if rule is not None:
