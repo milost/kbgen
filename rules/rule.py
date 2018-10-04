@@ -1,155 +1,288 @@
 import re
-from typing import Dict
+from typing import Dict, Optional, List, Tuple
 
-from rdflib import URIRef
+from rdflib import URIRef, Graph
 
 from rules import Literal
-from util_models import URIRelation
+from util_models import URIRelation, URIEntity
 
 
 class Rule(object):
     """
     Rules are assumed to have their consequent always with first argument ?a and second ?b
     """
-    def __init__(self, antecedents=None, consequents=None, std_conf=1.0, pca_conf=1.0):
-        self.antecedents = antecedents or []
-        self.consequents = consequents or []
-        self.std_conf = std_conf
-        self.pca_conf = pca_conf
+    def __init__(self,
+                 antecedents: List[Literal] = None,
+                 consequents: List[Literal] = None,
+                 std_confidence: float = 1.0,
+                 pca_confidence: float = 1.0):
+        """
+        Create a rule from a premise and a conclusion along with two confidence scores produced by AMIE. The premise can
+        contain multiple literals, while the conclusion only contains one literal.
+        :param antecedents: list of literals that describe the premise
+        :param consequents: list of literals that describe the conclusion (should only contain one literal in AMIE)
+        :param std_confidence: TODO: what does this confidence mean
+        :param pca_confidence: TODO: what does this confidence mean
+        """
+        self.antecedents: List[Literal] = antecedents or []
+        self.consequents: List[Literal] = consequents or []
+        self.std_confidence = std_confidence
+        self.pca_confidence = pca_confidence
 
     def __str__(self):
-        rule_str = ""
-        for ant in self.antecedents:
-            rule_str += ant.__str__() + "  "
-        rule_str += "=>  "
-        for con in self.consequents:
-            rule_str += con.__str__() + "  "
-        return rule_str
+        rule_string = ""
 
-    def antecedents_sparql(self):
-        patterns = ""
-        for ant in self.antecedents:
-            patterns += ant.sparql_patterns() + " . "
-        return patterns
+        # add premise literals
+        for antecedent in self.antecedents:
+            rule_string += antecedent.__str__() + "  "
 
-    def antecedents_patterns(self, g, s, p, o):
+        # add implication arrow
+        rule_string += "=>  "
+
+        # add conclusion literals
+        for consequent in self.consequents:
+            rule_string += consequent.__str__() + "  "
+
+        return rule_string
+
+    def antecedents_patterns(self,
+                             graph: Graph,
+                             rdf_subject: URIEntity,
+                             rdf_relation: URIRelation,
+                             rdf_object: URIEntity) -> Tuple[str, Optional[Literal]]:
+        """
+        Creates the SPARQL pattern to filter the graph according to the premise of this rule (i.e., all literals in the
+        premise).
+        :param graph: the synthesized graph
+        :param rdf_subject: uri of the subject in the new fact
+        :param rdf_relation: uri of the relation in the new fact
+        :param rdf_object: uri of the object in the new fact
+        :return: tuple of the full SPARQL pattern of the premise and the literal of the premise with a matching relation
+        type as the new fact, if such a literal exists
+        """
+        # contains the concatenated SPARQL patterns of the literals, i.e. the SPARQL filter to match nodes that conform
+        # with all literals in the premise
         patterns = ""
-        arg_s = None
-        arg_o = None
-        new_lit = None
-        p_uri = URIRef(p)
-        for ant in self.antecedents:
-            ant_p_uri = ant.relation.uri
-            if ant_p_uri == p_uri:
-                arg_s = "?"+chr(ant.arg1+96)
-                arg_o = "?"+chr(ant.arg2+96)
-                new_lit = ant
+
+        # subject of a matching literal
+        matched_literal_subject = None
+
+        # object of a matching literal
+        matched_literal_object = None
+
+        # the literal that matches the new fact
+        matched_literal = None
+
+        # TODO: why not this
+        # relation_uri = rdf_relation.uri
+        relation_uri = URIRef(rdf_relation)
+
+        # test if a literal in the premise handles the same relation that is in the new fact
+        # save the literal and its subject and object if such an literal exists
+        for antecedent in self.antecedents:
+            antecedent_relation_uri = antecedent.relation.uri
+            if antecedent_relation_uri == relation_uri:
+                matched_literal_subject = f"?{antecedent.literal_subject}"
+                matched_literal_object = f"?{antecedent.literal_object}"
+                matched_literal = antecedent
                 break
 
-        for ant in self.antecedents:
-            if ant.relation != p:
-                patterns += ant.sparql_patterns()
+        # concatenate the SPARQL pattern fo every literal to query nodes matching all literals
+        # exclude the literal with a matching relation type since it is already satisfied by the new fact that will be
+        # added
+        for antecedent in self.antecedents:
+            if antecedent.relation != rdf_relation:
+                patterns += antecedent.sparql_patterns()
 
-        # TODO fix invalid < and > symbols in uri
-        s_ent = "<"+s+">"
-        o_ent = "<"+o+">"
+        subject_entity = f"<{rdf_subject}>"
+        object_entity = f"<{rdf_object}>"
 
-        patterns = patterns.replace(arg_s, s_ent) if arg_s is not None else patterns
-        patterns = patterns.replace(arg_o, o_ent) if arg_s is not None else patterns
+        if matched_literal_subject is not None:
+            patterns = patterns.replace(matched_literal_subject, subject_entity)
 
-        return patterns, new_lit
+        if matched_literal_object is not None:
+            patterns = patterns.replace(matched_literal_object, object_entity)
 
-    def produce(self, g, s, p, o):
-        ss, ps, os = [], [], []
+        return patterns, matched_literal
+
+    def produce(self,
+                graph: Graph,
+                rdf_subject: URIEntity,
+                rdf_relation: URIRelation,
+                rdf_object: URIEntity) -> List[Tuple[URIEntity, URIRef, URIEntity]]:
+        """
+        Produces new facts according to this rule given a new input fact.
+        :param graph: the synthesized graph
+        :param rdf_subject: uri of the subject in the new fact
+        :param rdf_relation: uri of the relation in the new fact
+        :param rdf_object: uri of the object in the new fact
+        :return: a list of facts produced by this rule
+        """
+        # contains the facts produced by this rule
+        new_facts: List[Tuple[URIEntity, URIRef, URIEntity]] = []
+
+        # QUESTION: apparently AMIE rules can only have one triple in their conclusion. Is this actually the case?
+
+        # if there is only one literal in the premise, simply check if it matches
+        # a new fact is only produced if both subject and object of the input fact also appear in the premise literal
         if len(self.antecedents) == 1:
-            r_j = self.consequents[0].relation
-            if isinstance(r_j, URIRelation):
-                new_p = r_j.uri
+
+            # relation of the (only) literal in the conclusion
+            new_relation = self.consequents[0].relation
+            if isinstance(new_relation, URIRelation):
+                new_relation_uri = new_relation.uri
             else:
-                new_p = URIRelation(r_j).uri
+                new_relation_uri = URIRelation(new_relation).uri
 
-            if self.antecedents[0].arg1 == self.consequents[0].arg1 and \
-               self.antecedents[0].arg2 == self.consequents[0].arg2:
-                ss.append(s), ps.append(new_p), os.append(o)
+            # if the subject and object of the premise and the conclusion are the same entities
+            if (
+                self.antecedents[0].literal_subject_id == self.consequents[0].literal_subject_id
+                and self.antecedents[0].literal_object_id == self.consequents[0].literal_object_id
+            ):
+                new_facts.append((rdf_subject, new_relation_uri, rdf_object))
 
-            if self.antecedents[0].arg1 == self.consequents[0].arg2 and \
-               self.antecedents[0].arg2 == self.consequents[0].arg1:
-                ss.append(o), ps.append(new_p), os.append(s)
-            return zip(ss, ps, os)
+            # if the subject and object of the premise are swapped in the conclusion
+            if (
+                self.antecedents[0].literal_subject_id == self.consequents[0].literal_object_id
+                and self.antecedents[0].literal_object_id == self.consequents[0].literal_subject_id
+            ):
+                new_facts.append((rdf_object, new_relation_uri, rdf_subject))
+
+            return new_facts
+
         else:
-            patterns, new_lit = self.antecedents_patterns(g, s, p, o)
+            # there are multiple literals in the premise
+            # to check for triples matching every literal, a sparql query is built from them
 
-            if "?b" not in patterns and "?a" not in patterns:
-                projection = "ask "
+            # build the where part of the sparql query and find the literal matching the relation type of the input fact
+            # if such a literal exists
+            query_patterns, new_literal = self.antecedents_patterns(graph, rdf_subject, rdf_relation, rdf_object)
+
+            # if the patterns of the sparql query do not contain either the subject or the object, only query for
+            # possible solutions to the query
+            # an ask query only queries if the pattern has a solution, i.e. do any nodes match the pattern
+            # it will return a yes/no answer
+            if "?b" not in query_patterns and "?a" not in query_patterns:
+                query_projection = "ask "
             else:
-                projection = "select where "
-                if "?b" in patterns:
-                    projection = projection.replace("select ", "select ?b ")
-                if "?a" in patterns:
-                    projection = projection.replace("select ", "select ?a ")
+                # insert the selectors for subject and object into the select query if they exist in the query pattern
+                query_projection = "select where "
 
-            patterns = "{"+patterns+"}"
+                # the resulting query would look like "select ?a ?b ..." if both cases are true
+                if "?b" in query_patterns:
+                    query_projection = query_projection.replace("select ", "select ?b ")
+                if "?a" in query_patterns:
+                    query_projection = query_projection.replace("select ", "select ?a ")
 
-            sparql_query = projection + patterns
+            # build remaining part of the query and execute it
+            query_patterns = "{" + query_patterns + "}"
+            sparql_query = query_projection + query_patterns
+            query_result = graph.query(sparql_query)
 
-            qres = g.query(sparql_query)
-
-            r_j = self.consequents[0].relation
-            if isinstance(r_j, URIRelation):
-                new_p = self.consequents[0].relation.uri
+            # relation type of the resulting triple
+            new_relation = self.consequents[0].relation
+            if isinstance(new_relation, URIRelation):
+                new_relation_uri = self.consequents[0].relation.uri
             else:
-                new_p = URIRelation(self.consequents[0].relation).uri
+                new_relation_uri = URIRelation(self.consequents[0].relation).uri
 
-            if "?a" in projection and "?b" in projection:
-                for a, b in qres:
-                    new_s = a
-                    new_o = b
-                    ss.append(new_s), ps.append(new_p), os.append(new_o)
-            elif "?a" in projection:
-                new_o = s if new_lit.arg1 == 2 else o
-                for a in qres:
-                    new_s = a[0]
-                    ss.append(new_s), ps.append(new_p), os.append(new_o)
-            elif "?b" in projection:
-                new_s = s if new_lit.arg1 == 1 else o
-                for b in qres:
-                    new_o = b[0]
-                    ss.append(new_s), ps.append(new_p), os.append(new_o)
-            else:
-                if bool(qres):
-                    new_s = s if new_lit.arg1 == 1 else o
-                    new_o = o if new_lit.arg2 == 2 else s
-                    ss.append(new_s), ps.append(new_p), os.append(new_o)
+            # handle every possible projection of the query
+            if "?a" in query_projection and "?b" in query_projection:
+                # both subject and object for each of the new facts were queried
 
-            return zip(ss, ps, os)
+                # add every result tuple as a new fact with the relation of the conclusion
+                for new_subject, new_object in query_result:
+                    new_facts.append((new_subject, new_relation_uri, new_object))
+
+            elif "?a" in query_projection:
+                # only the subject for each of the new facts was queried
+
+                # select the subject or the object of the premise as object for new fact depending on the naming
+                # i.e., a subject_id == 2 represents a "b", therefore the subject would be the new object
+                if new_literal.literal_subject_id == 2:
+                    new_object = rdf_subject
+                else:
+                    # the object in the premise was named "b"
+                    new_object = rdf_object
+
+                # add every result subject with the previously determined object as new fact with the relation of the
+                # conclusion
+                for new_subject, in query_result:
+                    new_facts.append((new_subject, new_relation_uri, new_object))
+
+            elif "?b" in query_projection:
+                # only the object for each of the new facts was queried
+
+                # select the subject or the object of the premise as subject for new fact depending on the naming
+                # i.e., a subject_id == 1 represents an "a", therefore the subject would be the new subject
+                if new_literal.literal_subject_id == 1:
+                    new_subject = rdf_subject
+                else:
+                    # the object in the premise was named "a"
+                    new_subject = rdf_object
+
+                # add every result object with the previously determined subject as new fact with the relation of the
+                # conclusion
+                for new_object, in query_result:
+                    new_facts.append((new_subject, new_relation_uri, new_object))
+
+            elif bool(query_result):
+                # if the result is non empty, or an ask query response is yes
+
+                # if the subject was named "a" and the object named "b", the new fact will have the same subject and
+                # object. otherwise they are swapped
+                if new_literal.literal_subject_id == 1:
+                    new_subject = rdf_subject
+                else:
+                    new_subject = rdf_object
+
+                if new_literal.literal_object_id == 2:
+                    new_object = rdf_object
+                else:
+                    new_object = rdf_subject
+
+                # add the new fact with the original subject and object (possibly swapped) and the relation of the
+                # conclusion
+                new_facts.append((new_subject, new_relation_uri, new_object))
+
+            return new_facts
 
     @staticmethod
-    def parse_amie(line: str, relation_to_id: Dict[URIRef, int]):
+    def parse_amie(line: str, relation_to_id: Dict[URIRef, int]) -> Optional['Rule']:
+        """
+        Parses an AMIE rule from a line in a file, translates the relation URI to an id and creates a rule object.
+        :param line: line of a file that contains an AMIE rule
+        :param relation_to_id: dictionary pointing from relation URIs to the ids used in the models
+        :return: rule object containing the parsed AMIE rule
+        """
+        # extract fields from tsv-formatted AMIE rule
         cells = line.split("\t")
         rule_string = cells[0]
-        std_conf = float(cells[2].strip())
-        pca_conf = float(cells[3].strip())
-        assert "=>" in rule_string
-        ant_cons = rule_string.split("=>")
-        ant_cons = list(filter(None, ant_cons))
-        ant_string = ant_cons[0].strip()
-        con_string = ant_cons[1].strip()
+        std_confidence = float(cells[2].strip())
+        pca_confidence = float(cells[3].strip())
 
-        ant_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", ant_string)
-        con_string = re.sub("(\?\w+)\s+\?", "\g<1>|?", con_string)
+        # split rule into premise and conclusion
+        assert "=>" in rule_string, "Rule string does not contain \"=>\" substring!"
+        premise, conclusion = [rule_part.strip() for rule_part in rule_string.split("=>") if rule_part]
 
+        # TODO: why this replacement (matches "?[a-zA-Z0-9_]+<whitespace>+?" (i.e., relation begins with ?)
+        premise = re.sub("(\?\w+)\s+\?", "\g<1>|?", premise)
+        conclusion = re.sub("(\?\w+)\s+\?", "\g<1>|?", conclusion)
+
+        # split premise into single literals (i.e., triples)
         antecedents = []
-        for ant in ant_string.split("|"):
-            lit = Literal.parse_amie(ant, relation_to_id)
-            if lit is None:
+        for antecedent in premise.split("|"):
+            literal = Literal.parse_amie(antecedent, relation_to_id)
+            if literal is None:
                 return None
-            antecedents.append(lit)
+            antecedents.append(literal)
 
+        # split conclusion into single literals (i.e., triples)
         consequents = []
-        for con in con_string.split("|"):
-            lit = Literal.parse_amie(con, relation_to_id)
-            if lit is None:
+        for consequent in conclusion.split("|"):
+            literal = Literal.parse_amie(consequent, relation_to_id)
+            if literal is None:
                 return None
-            consequents.append(lit)
+            consequents.append(literal)
 
-        return Rule(antecedents, consequents, std_conf, pca_conf)
+        return Rule(antecedents, consequents, std_confidence, pca_confidence)

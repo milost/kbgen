@@ -172,7 +172,7 @@ class KBModelM3(KBModelM2):
             # TODO: what is rule
             for rule in rules:
                 rand_number = random.random()
-                if (self.pca and rand_number < rule.pca_conf) or (not self.pca and rand_number < rule.std_conf):
+                if (self.pca and rand_number < rule.pca_confidence) or (not self.pca and rand_number < rule.std_confidence):
                     start_t = datetime.datetime.now()
                     new_facts = rule.produce(graph, rdf_subject, rdf_relation, rdf_object)
                     delta = datetime.datetime.now() - start_t
