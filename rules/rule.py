@@ -4,7 +4,7 @@ from typing import Dict, Optional, List, Tuple
 from rdflib import URIRef, Graph
 
 from rules import Literal
-from util_models import URIRelation, URIEntity
+from util_models import URIRelation
 
 
 class Rule(object):
@@ -14,19 +14,23 @@ class Rule(object):
     def __init__(self,
                  antecedents: List[Literal] = None,
                  consequents: List[Literal] = None,
-                 std_confidence: float = 1.0,
+                 standard_confidence: float = 1.0,
                  pca_confidence: float = 1.0):
         """
         Create a rule from a premise and a conclusion along with two confidence scores produced by AMIE. The premise can
         contain multiple literals, while the conclusion only contains one literal.
+        The measures are further explained in the AMIE paper(http://resources.mpi-inf.mpg.de/yago-naga/amie/amie.pdf)
+
         :param antecedents: list of literals that describe the premise
         :param consequents: list of literals that describe the conclusion (should only contain one literal in AMIE)
-        :param std_confidence: TODO: what does this confidence mean
-        :param pca_confidence: TODO: what does this confidence mean
+        :param standard_confidence: takes all facts that are not in the KB as negative evidence. Thus it is the ratio
+                                    of its predictions that are in the kB
+        :param pca_confidence: the confidence of the partial completeness assumption (PCA). It identifies more
+                               productive rules than the other measures
         """
         self.antecedents: List[Literal] = antecedents or []
         self.consequents: List[Literal] = consequents or []
-        self.std_confidence = std_confidence
+        self.standard_confidence = standard_confidence
         self.pca_confidence = pca_confidence
 
     def __str__(self):
