@@ -25,7 +25,6 @@ def load_graph(input_file_path: str) -> Tuple[Graph, str]:
     rdf_format = input_file_path[input_file_path.rindex(".") + 1:]
 
     print("Loading data...")
-    # g is a graph of the loaded RDF data
     graph = Graph()
     graph.parse(input_file_path, format=rdf_format)
     return graph, rdf_format
@@ -171,7 +170,7 @@ def create_entity_type_adjacency_matrix(graph: Graph,
     Creates an adjacency matrix for the "type of" relation, i.e., it contains all the type information of the graph.
     :param graph: the graph object of the Knowledge Graph
     :param entity_to_id: the dictionary of the entities and their unique identifies
-    :param entity_type_to_id:  the dictionary of the entity types and their unique identifies
+    :param entity_type_to_id: the dictionary of the entity types and their unique identifies
     :return: an adjacency matrix for the "type of" relation
     """
     # create matrix for object types/classes

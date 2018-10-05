@@ -4,7 +4,7 @@ from rdflib import URIRef
 class URIEntity(object):
     prefix = "http://dws.uni-mannheim.de/synthesized/Entity_"
 
-    def __init__(self, entity_id):
+    def __init__(self, entity_id: int):
         self.uri = URIRef(self.prefix + str(entity_id))
         self.id = entity_id
 
