@@ -1,4 +1,3 @@
-import json
 import pickle
 from argparse import ArgumentParser, Namespace
 from typing import Dict
