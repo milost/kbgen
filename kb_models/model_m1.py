@@ -551,7 +551,7 @@ class KBModelM1(KBModel):
                                 will be determined by the number of edges on which the model was trained and the size
                                 parameter
         :param debug: boolean if logging should be on debug level
-        :param pca: boolean if PCA should be used. This parameter is not used
+        :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
         :return: the synthesized graph as rdf graph object
         """
         print(f"Synthesizing {self.name} model...")
