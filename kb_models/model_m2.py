@@ -198,7 +198,7 @@ class KBModelM2(KBModelM1):
         return KBModelM2.generate_from_tensor_and_model(m1_model, input_path, debug)
 
     @staticmethod
-    def generate_from_tensor_and_model(naive_model: KBModelM1, input_path: str, debug=False) -> 'KBModelM2':
+    def generate_from_tensor_and_model(naive_model: KBModelM1, input_path: str, debug: bool = False) -> 'KBModelM2':
         """
         Generates an M2 model from the specified tensor file and M1 model.
         :param naive_model: the previously generated M1 model

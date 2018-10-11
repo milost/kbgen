@@ -83,7 +83,7 @@ def build_e_models(tensor_file: str, kb_models: List[str], output_name: str) -> 
         assert isinstance(m1_model, KBModelM1)
 
         if dist_subjects is None and dist_objects is None:
-            model = KBModelEMi.generate_from_tensor(m1_model, tensor_file)
+            model = KBModelEMi.generate_from_tensor_and_model(m1_model, tensor_file)
             dist_subjects = model.dist_subjects
             dist_objects = model.dist_objects
         else:

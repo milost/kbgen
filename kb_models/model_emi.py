@@ -1,5 +1,6 @@
 import warnings
 from math import floor
+from typing import Dict, List
 
 import numpy as np
 from scipy.stats import pareto, zipf, powerlaw, uniform, expon, foldnorm, truncexpon, truncnorm
@@ -54,29 +55,43 @@ class KBModelEMi(KBModelM1):
         else:
             return None
 
-    @staticmethod
-    def learn_best_dist_model(dist, distributions=[truncexpon]):
-        dist.sort(reverse=True)
+    @classmethod
+    def learn_best_dist_model(cls, type_distribution: List[int], distributions: list = None):
+        """
+        TODO
+        :param type_distribution: the number of occurrences of entities of this type in a specific relation either as
+                                  subject or as object
+        :param distributions: TODO
+        :return: TODO
+        """
+        distributions = distributions or [truncexpon]
 
-        x = range(len(dist))
-        y = np.array(dist)
+        # TODO: why
+        type_distribution.sort(reverse=True)
+
+        x = range(len(type_distribution))
+        y = np.array(type_distribution)
         y = (y.astype(float) / np.sum(y)).tolist()
 
-        uniform_y = np.full(len(dist), 1.0 / len(dist), dtype=float)
+        uniform_y = np.full(len(type_distribution), 1.0 / len(type_distribution), dtype=float)
         best_sse = np.sum(np.power(y - uniform_y, 2.0))
         best_model = None
         if best_sse > 0:
-            for d in distributions:
+            # iterate over the different kinds of distributions that should be calculated (i.e., truncexpon)
+            for distribution in distributions:
                 warnings.filterwarnings('ignore')
-                # fit dist to data
-                if sum(dist) > 1000:
+
+                # fit distribution to data
+
+                # TODO: why
+                if sum(type_distribution) > 1000:
                     data_sample = np.random.choice(x, 1000, replace=True, p=y)
-                    params = d.fit(data_sample, loc=0, scale=len(dist))
+                    params = distribution.fit(data_sample, loc=0, scale=len(type_distribution))
                 else:
                     data = []
-                    for i, freq in enumerate(dist):
-                        data = data + [i] * int(freq)
-                    params = d.fit(data, loc=0, scale=len(dist))
+                    for index, number_of_occurrences in enumerate(type_distribution):
+                        data = data + [index] * int(number_of_occurrences)
+                    params = distribution.fit(data, loc=0, scale=len(type_distribution))
 
                 # Separate parts of parameters
                 arg = params[:-2]
@@ -84,60 +99,115 @@ class KBModelEMi(KBModelM1):
                 scale = params[-1]
 
                 # Calculate fitted PDF and error with fit in distribution
-                pdf = d.pdf(x, loc=0, scale=len(dist), *arg)
+                pdf = distribution.pdf(x, loc=0, scale=len(type_distribution), *arg)
                 sse = np.sum(np.power(y - pdf, 2.0))
 
                 if sse < best_sse:
-                    best_model = (d.__class__.__name__.replace("_gen", ""), params)
+                    best_model = (distribution.__class__.__name__.replace("_gen", ""), params)
                     best_sse = sse
 
         return best_model
 
-    @staticmethod
-    def generate_from_tensor(model: KBModelM1, input_path: str, debug: bool = False) -> 'KBModelEMi':
-        X = loadGraphNpz(input_path)
-        types = loadTypesNpz(input_path).tocsr()
-        n_relations = len(X)
-        dist_subjects = [{} for r in range(n_relations)]
-        dist_objects = [{} for r in range(n_relations)]
+    @classmethod
+    def generate_from_tensor_and_model(cls, m_model: KBModelM1, input_path: str, debug: bool = False) -> 'KBModelEMi':
+        """
+        Generates an e model from the specified tensor file and M1, M2 or M3 model.
+        :param m_model: the previously generated M1/M2/M3 model
+        :param input_path: path to the numpy tensor file
+        :param debug: boolean indicating if the logging level is on debug
+        :return: an eMi model generated from the tensor file and M1/M2/M3 model
+        """
+        # the list of adjacency matrices of the object property relations created in load_tensor
+        relation_adjaceny_matrices = loadGraphNpz(input_path)
 
+        # the entity type adjacency matrix created in load_tensor
+        entity_types = loadTypesNpz(input_path).tocsr()
+
+        # number of different relations (object properties)
+        number_of_relations = len(relation_adjaceny_matrices)
+
+        # points from relation id to a dictionary pointing from a multi type to a list of occurrences
+        # these occurrences are the number of occurrences of the single instances of this multi type as subject in
+        # relations of this relation type
+        subject_distribution: Dict[int, Dict[MultiType, List[int]]] = [{} for _ in range(number_of_relations)]
+
+        # points from relation id to a dictionary pointing from a multi type to a list of occurrences
+        # these occurrences are the number of occurrences of the single instances of this multi type as object in
+        # relations of this relation type
+        object_distribution: Dict[int, Dict[MultiType, List[int]]] = [{} for _ in range(number_of_relations)]
+
+        # TODO: what is truncexpon
         distributions = [truncexpon]
 
-        for r in range(n_relations):
-            slice = X[r]
-            model.entity_type_distribution
-            s_sum = {}
-            o_sum = {}
+        for relation_id in range(number_of_relations):
+            # adjacency matrix of the current relation type
+            adjacency_matrix = relation_adjaceny_matrices[relation_id]
 
-            for col in slice.col:
-                o_sum[col] = 1 if col not in o_sum else o_sum[col] + 1
-            for row in slice.row:
-                s_sum[row] = 1 if row not in s_sum else s_sum[row] + 1
+            # dictionary that points from a subject id to the number of occurrences it has in relations
+            subject_sum = {}
 
-            for s, count in s_sum.items():
-                s_types = MultiType(types[s].indices)
-                assert s_types in model.entity_type_distribution
-                if s_types not in dist_subjects[r]:
-                    dist_subjects[r][s_types] = []
-                dist_subjects[r][s_types].append(count)
+            # dictionary that points from an object id to the number of occurrences it has in relations
+            object_sum = {}
 
-            for o, count in o_sum.items():
-                o_types = MultiType(types[o].indices)
-                assert o_types in model.entity_type_distribution
-                if o_types not in dist_objects[r]:
-                    dist_objects[r][o_types] = []
-                dist_objects[r][o_types].append(count)
+            # iterate over the column indicies in the adjacency matrix (= object ids that occur in relations)
+            for object_id in adjacency_matrix.col:
+                if object_id not in object_sum:
+                    object_sum[object_id] = 1
+                else:
+                    object_sum[object_id] = object_sum[object_id] + 1
 
-            models_subjects = [{} for r in range(n_relations)]
-            models_objects = [{} for r in range(n_relations)]
+            # iterate over the row indicies in the adjacency matrix (= subject ids that occur in relations)
+            for subject_id in adjacency_matrix.row:
+                if subject_id not in subject_sum:
+                    subject_sum[subject_id] = 1
+                else:
+                    subject_sum[subject_id] = subject_sum[subject_id] + 1
 
-            for r in range(n_relations):
-                for k, dist in dist_subjects[r].items():
-                    models_subjects[r][k] = KBModelEMi.learn_best_dist_model(dist_subjects[r][k], distributions)
-                for k, dist in dist_objects[r].items():
-                    models_objects[r][k] = KBModelEMi.learn_best_dist_model(dist_objects[r][k], distributions)
+            # aggregate the number of occurrences of instances of entity types in relations as subjects
+            for subject_id, count in subject_sum.items():
+                # get the multi type of the subject and assert that it has a distribution
+                subject_multi_type = MultiType(entity_types[subject_id].indices)
+                assert subject_multi_type in m_model.entity_type_distribution
 
-        return KBModelEMi(model, models_subjects, models_objects)
+                # if the multi type does not exist in the subject distribution add it
+                if subject_multi_type not in subject_distribution[relation_id]:
+                    subject_distribution[relation_id][subject_multi_type] = []
+
+                # append the number of occurrences of this instance of the multi type to the multi type in the subject
+                # distribution
+                subject_distribution[relation_id][subject_multi_type].append(count)
+
+            # aggregate the number of occurrences of instances of entity types in relations as objects
+            for object_id, count in object_sum.items():
+                # get the multi type of the object and assert that it has a distribution
+                object_multi_type = MultiType(entity_types[object_id].indices)
+                assert object_multi_type in m_model.entity_type_distribution
+
+                # if the multi type does not exist in the object distribution add it
+                if object_multi_type not in object_distribution[relation_id]:
+                    object_distribution[relation_id][object_multi_type] = []
+
+                # append the number of occurrences of this instance of the multi type to the multi type in the object
+                # distribution
+                object_distribution[relation_id][object_multi_type].append(count)
+
+        # TODO
+        models_subjects = [{} for _ in range(number_of_relations)]
+        models_objects = [{} for _ in range(number_of_relations)]
+
+        # create
+        for relation_id in range(number_of_relations):
+            # TODO
+            for multi_type, type_distribution in subject_distribution[relation_id].items():
+                subject_distribution_model = cls.learn_best_dist_model(type_distribution, distributions)
+                models_subjects[relation_id][multi_type] = subject_distribution_model
+
+            # TODO
+            for multi_type, type_distribution in object_distribution[relation_id].items():
+                object_distribution_model = cls.learn_best_dist_model(type_distribution, distributions)
+                models_objects[relation_id][multi_type] = object_distribution_model
+
+        return KBModelEMi(m_model, models_subjects, models_objects)
 
     def synthesize(self, size=1.0, number_of_entities=None, number_of_edges=None, debug=False, pca=True):
         return self.base_model.synthesize(size, number_of_entities, number_of_edges, debug, pca)
