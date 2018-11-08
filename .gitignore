@@ -19,3 +19,6 @@ eswc2015.n3
 *.pkl
 *.n3
 *.tsv
+*.ttl
+*.txt
+*oracle.json
