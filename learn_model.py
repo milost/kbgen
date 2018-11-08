@@ -3,6 +3,7 @@ from argparse import ArgumentParser, Namespace
 from typing import Tuple, List
 
 from kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelEMi
+from kb_models.model_m4 import KBModelM4
 from rules import RuleSet
 
 
@@ -65,6 +66,21 @@ def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
     return model, f"{output_name}-M3.pkl"
 
 
+def build_m4_model(output_name: str) -> Tuple[KBModelM2, str]:
+    """
+    Build an M4 model from a previously built and serialized M3 model. The M4 model must have been
+    serialized with the same output_name passed to this method.
+    :param output_name: name that is used for the output file name
+    :return: tuple of the generated M4 model and the output file name
+    """
+    m3_model_path = f"{output_name}-M3.pkl"
+    m3_model = pickle.load(open(m3_model_path, "rb"))
+    assert isinstance(m3_model, KBModelM3)
+
+    model = KBModelM4(m3_model)
+    return model, f"{output_name}-M4.pkl"
+
+
 def build_e_models(tensor_file: str, kb_models: List[str], output_name: str) -> Tuple[List[KBModelM1], List[str]]:
     """
     Builds e-models for every model type passed. These are generated from the Knowledge Graph and the subject and
@@ -115,6 +131,11 @@ def main():
 
     if args.model == "M3":
         model, output_name = build_m3_model(args.rules_path, base)
+        models.append(model)
+        models_output.append(output_name)
+
+    if args.model == "M4":
+        model, output_name = build_m4_model(base)
         models.append(model)
         models_output.append(output_name)
 

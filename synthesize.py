@@ -5,6 +5,7 @@ from typing import Dict
 from rdflib import Graph, URIRef
 
 from kb_models import KBModelM1
+from kb_models.model_m4 import KBModelM4
 from util import dump_tsv
 from util_models import URIRelation, URIType
 
@@ -74,10 +75,16 @@ def main():
     # replace the numbered rdf relations with the proper names from the original knowledge base
     graph = replace_id_with_name(graph, model)
 
+    if isinstance(model, KBModelM4):
+        with open(f"{args.output}-oracle.json", "w") as oracle_file:
+            model.oracle.to_json(oracle_file)
+
+    formats = ["n3", "ttl"]
+
     # serialize the generated graph and write it to a .tsv file
-    rdf_format = args.output[args.output.rindex(".") + 1:]
-    graph.serialize(open(args.output, "wb"), format=rdf_format)
-    dump_tsv(graph, args.output.replace("." + rdf_format, ".tsv"))
+    for rdf_format in formats:
+        graph.serialize(f"{args.output}.{rdf_format}", format=rdf_format)
+    dump_tsv(graph, f"{args.output}.tsv")
 
 
 if __name__ == '__main__':
