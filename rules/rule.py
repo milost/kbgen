@@ -49,6 +49,27 @@ class Rule(object):
 
         return rule_string
 
+    def full_query_pattern(self) -> str:
+        query_pattern = ""
+        for antecedent in self.antecedents:
+            query_pattern += antecedent.sparql_patterns()
+
+        if "?b" not in query_pattern and "?a" not in query_pattern:
+            query_projection = "ask "
+        else:
+            # insert the selectors for subject and object into the select query if they exist in the query pattern
+            query_projection = "select where "
+
+            # the resulting query would look like "select ?a ?b ..." if both cases are true
+            if "?b" in query_pattern:
+                query_projection = query_projection.replace("select ", "select ?b ")
+            if "?a" in query_pattern:
+                query_projection = query_projection.replace("select ", "select ?a ")
+
+        # build remaining part of the query and execute it
+        query_pattern = "{" + query_pattern + "}"
+        return query_projection + query_pattern
+
     def antecedents_patterns(self,
                              graph: Graph,
                              subject_uri: URIRef,

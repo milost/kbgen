@@ -29,7 +29,7 @@ class RuleStats(Rule):
         :param antecedents: list of literals that describe the premise
         :param consequents: list of literals that describe the conclusion (should only contain one literal in AMIE)
         :param head_coverage: the proportion of pairs from the head relation that are covered by the predictions of the
-                              rule
+                              rule (i.e. how many triples that are created by the rule were created by the rule)
         :param standard_confidence: takes all facts that are not in the KB as negative evidence. Thus it is the ratio
                                     of its predictions that are in the kB
         :param pca_confidence: the confidence of the partial completeness assumption (PCA). It identifies more
