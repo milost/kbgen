@@ -50,6 +50,7 @@ def extract_entity_types(graph: Graph) -> Dict[str, int]:
             entity_type_to_id[object] = entity_type_id
             entity_type_id += 1
 
+    print("Loading classes...")
     # iterate over all triples that define the classes
     for subject, predicate, object in graph.triples((None, RDF.type, OWL.Class)):
         # if the class hasn't been seen yet, add it to the type dictionary with a unique id
@@ -57,6 +58,7 @@ def extract_entity_types(graph: Graph) -> Dict[str, int]:
             entity_type_to_id[subject] = entity_type_id
             entity_type_id += 1
 
+    print("Loading subclasses...")
     # iterate over all triples that define subclasses
     for subject, predicate, object in graph.triples((None, RDFS.subClassOf, None)):
         # if the subclass hasn't been seen yet, add it to the type dictionary with a unique id
@@ -118,6 +120,7 @@ def extract_properties(graph: Graph, entity_to_id: Dict[str, int]) -> Dict[str, 
                 property_to_id[predicate] = predicate_id
                 predicate_id += 1
 
+    print("Iterating over OWL.ObjectProperty...")
     # iterate over all triples that define the subject as an object property
     for subject, predicate, object in graph.triples((None, OWL.ObjectProperty, None)):
         # if the object property hasn't been seen as a predicate yet, add it to the predicate dictionary with a new id
@@ -217,12 +220,14 @@ def main():
     # DAG of the object property hierarchy
     object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
 
+    print("Replacing DAG nodes with ids in entity type DAG")
     # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling the
     # graph
     for entity_type_id, entity_type_dag_node in entity_type_hierarchy_dag.items():
         entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
         entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
 
+    print("Replacing DAG nodes with ids in property type DAG")
     # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
     # graph
     for property_id, property_dag_node in object_property_hierarchy_dag.items():
