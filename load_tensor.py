@@ -208,12 +208,20 @@ def main():
     # load the graph and extract entities, entity types and object properties
     graph, rdf_format = load_graph(args.input)
     entity_type_to_id = extract_entity_types(graph)
+    np.save(args.input.replace("." + rdf_format, "_types_dict.npz"), entity_type_to_id)
+
     entity_to_id = extract_entities(graph, entity_type_to_id)
+    np.save(args.input.replace("." + rdf_format, "_entities_dict.npz"), entity_to_id)
+
     property_to_id = extract_properties(graph, entity_to_id)
+    np.save(args.input.replace("." + rdf_format, "_relations_dict.npz"), property_to_id)
 
     # build adjacency matrices for all relations (object properties and type relations) in the graph
     property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
+    np.save(args.input.replace("." + rdf_format, "_data.npz"), property_adjaceny_matrices)
+
     entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
+    np.save(args.input.replace("." + rdf_format, "_types.npz"), entity_type_adjacency_matrix)
 
     # DAG of the entity type/class hierarchy
     entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
@@ -227,12 +235,16 @@ def main():
         entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
         entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
 
+    np.save(args.input.replace("." + rdf_format, "_type_hierarchy.npz"), entity_type_hierarchy_dag)
+
     print("Replacing DAG nodes with ids in property type DAG")
     # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
     # graph
     for property_id, property_dag_node in object_property_hierarchy_dag.items():
         property_dag_node.children = [child.node_id for child in property_dag_node.children]
         property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
+
+    np.save(args.input.replace("." + rdf_format, "_prop_hierarchy.npz"), object_property_hierarchy_dag)
 
     num_entity_types = len(entity_type_to_id or {})
     num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
@@ -247,9 +259,11 @@ def main():
     # explanation of domains and ranges: https://stackoverflow.com/a/9066520
     domains = get_domains(graph, property_to_id, entity_type_to_id)
     print(f"Loaded {len(domains)} relation domains...")
+    np.save(args.input.replace("." + rdf_format, "_domains.npz"), domains)
 
     ranges = get_ranges(graph, property_to_id, entity_type_to_id)
     print(f"Loaded {len(ranges)} relation ranges...")
+    np.save(args.input.replace("." + rdf_format, "_ranges.npz"), ranges)
 
     # TODO: don't know what this is for
     rdfs = {"type_hierarchy": entity_type_hierarchy_dag,
@@ -258,16 +272,16 @@ def main():
             "ranges": ranges}
 
     # serialize graph as .npz file
-    np.savez(args.input.replace("." + rdf_format, ".npz"),
-             data=property_adjaceny_matrices,  # WARNING: this could be a problem with a huge dataset (e.g., DBpedia)
-             types=entity_type_adjacency_matrix,
-             entities_dict=entity_to_id,
-             relations_dict=property_to_id,
-             types_dict=entity_type_to_id,
-             type_hierarchy=entity_type_hierarchy_dag,
-             prop_hierarchy=object_property_hierarchy_dag,
-             domains=domains,
-             ranges=ranges)
+    # np.savez(args.input.replace("." + rdf_format, ".npz"),
+    #          data=property_adjaceny_matrices,  # WARNING: this could be a problem with a huge dataset (e.g., DBpedia)
+    #          types=entity_type_adjacency_matrix,
+    #          entities_dict=entity_to_id,
+    #          relations_dict=property_to_id,
+    #          types_dict=entity_type_to_id,
+    #          type_hierarchy=entity_type_hierarchy_dag,
+    #          prop_hierarchy=object_property_hierarchy_dag,
+    #          domains=domains,
+    #          ranges=ranges)
 
 
 if __name__ == '__main__':
