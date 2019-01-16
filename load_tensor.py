@@ -5,7 +5,7 @@ import numpy as np
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
 from load_tensor_tools import get_ranges, get_domains, get_type_dag, get_prop_dag
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, save_npz
 
 
 def cli_args() -> Namespace:
@@ -207,21 +207,28 @@ def main():
 
     # load the graph and extract entities, entity types and object properties
     graph, rdf_format = load_graph(args.input)
+
     entity_type_to_id = extract_entity_types(graph)
-    np.save(args.input.replace("." + rdf_format, "_types_dict.npz"), entity_type_to_id)
+    # np.save(args.input.replace("." + rdf_format, "_types_dict.npz"), entity_type_to_id)
 
     entity_to_id = extract_entities(graph, entity_type_to_id)
-    np.save(args.input.replace("." + rdf_format, "_entities_dict.npz"), entity_to_id)
+    # np.save(args.input.replace("." + rdf_format, "_entities_dict.npz"), entity_to_id)
 
     property_to_id = extract_properties(graph, entity_to_id)
-    np.save(args.input.replace("." + rdf_format, "_relations_dict.npz"), property_to_id)
+    # np.save(args.input.replace("." + rdf_format, "_relations_dict.npz"), property_to_id)
 
     # build adjacency matrices for all relations (object properties and type relations) in the graph
     property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-    np.save(args.input.replace("." + rdf_format, "_data.npz"), property_adjaceny_matrices)
+    for index, matrix in enumerate(property_adjaceny_matrices):
+        file_name = "matrices/" + args.input.replace("." + rdf_format, f"_property_matrix_{index}.npz")
+        save_npz(file_name, matrix)
+    # np.save(args.input.replace("." + rdf_format, "_data.npz"), property_adjaceny_matrices)
 
     entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
-    np.save(args.input.replace("." + rdf_format, "_types.npz"), entity_type_adjacency_matrix)
+    for index, matrix in enumerate(entity_type_adjacency_matrix):
+        file_name = "matrices/" + args.input.replace("." + rdf_format, f"_entity_type_matrix_{index}.npz")
+        save_npz(file_name, matrix)
+    # np.save(args.input.replace("." + rdf_format, "_types.npz"), entity_type_adjacency_matrix)
 
     # DAG of the entity type/class hierarchy
     entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
