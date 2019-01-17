@@ -2,6 +2,7 @@ from typing import Dict
 
 import numpy as np
 from rdflib import OWL, RDFS, Graph
+from scipy.sparse import coo_matrix
 
 from tensor_models import DAGNode
 
@@ -79,6 +80,19 @@ def loadGraphNpz(input_dir):
 def loadTypesNpz(input_dir):
     dataset = np.load(input_dir)
     return dataset["types"].item()
+
+
+def save_coo_matrix(input_dir: str, matrix: coo_matrix):
+    data = matrix.data
+    rows: np.ndarray = matrix.row
+    columns: np.ndarray = matrix.col
+    shape = matrix.shape
+    np.savez(input_dir, data=data, rows=rows, columns=columns, shape=shape)
+
+
+def load_coo_matrix(input_dir: str) -> coo_matrix:
+    loaded = np.load(input_dir)
+    return coo_matrix((loaded["data"], (loaded["rows"], loaded["columns"])), shape=loaded["shape"])
 
 
 # def load_relations_dict(input_path):
