@@ -210,8 +210,10 @@ def main():
     # load the graph and extract entities, entity types and object properties
     graph, rdf_format = load_graph(args.input)
 
+    print("Saving graph...")
     with open("rdf_graph.bin", "wb") as graph_file:
         pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
+    print("Saved graph.")
 
     # entity_type_to_id = extract_entity_types(graph)
     # np.save(args.input.replace("." + rdf_format, "_types_dict"), entity_type_to_id)
