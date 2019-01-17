@@ -199,6 +199,7 @@ def create_entity_type_adjacency_matrix(graph: Graph,
     typedata = coo_matrix((type_coo["vals"], (type_coo["rows"], type_coo["cols"])),
                           shape=(len(entity_to_id), len(entity_type_to_id)),
                           dtype=int)
+
     print(f"{type_assertions} type assertions loaded...")
     return typedata
 
@@ -228,20 +229,19 @@ def main():
     property_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_relations_dict")).item()
 
     # build adjacency matrices for all relations (object properties and type relations) in the graph
-    property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-    print(f"Saving {len(property_adjaceny_matrices)} property adjacency matrices")
-    for index, matrix in enumerate(property_adjaceny_matrices):
-        file_name = "matrices/" + args.input.replace("." + rdf_format, f"_property_matrix_{index}.npz")
-        if Path(file_name).exists():
-            continue
-        save_npz(file_name, matrix)
+    # property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
+    # print(f"Saving {len(property_adjaceny_matrices)} property adjacency matrices")
+    # for index, matrix in enumerate(property_adjaceny_matrices):
+    #     file_name = "matrices/" + args.input.replace("." + rdf_format, f"_property_matrix_{index}.npz")
+    #     if Path(file_name).exists():
+    #         continue
+    #     save_npz(file_name, matrix)
     # np.save(args.input.replace("." + rdf_format, "_data.npz"), property_adjaceny_matrices)
 
     entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
-    print(f"Saving {len(entity_type_adjacency_matrix)} entity type adjacency matrices")
-    for index, matrix in enumerate(entity_type_adjacency_matrix):
-        file_name = "matrices/" + args.input.replace("." + rdf_format, f"_entity_type_matrix_{index}.npz")
-        save_npz(file_name, matrix)
+    print(f"Saving {len(entity_type_adjacency_matrix)} entity type adjacency matrix")
+    file_name = args.input.replace("." + rdf_format, f"_entity_type_matrix")
+    save_npz(file_name, entity_type_adjacency_matrix)
     # np.save(args.input.replace("." + rdf_format, "_types.npz"), entity_type_adjacency_matrix)
 
     # DAG of the entity type/class hierarchy
