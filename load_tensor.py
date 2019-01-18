@@ -209,24 +209,28 @@ def main():
     print(args)
 
     # load the graph and extract entities, entity types and object properties
-    graph, rdf_format = load_graph(args.input)
+    # graph, rdf_format = load_graph(args.input)
 
-    print("Saving graph...")
-    with open("rdf_graph.bin", "wb") as graph_file:
-        pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Saved graph.")
+    # print("Saving graph...")
+    # with open("rdf_graph.bin", "wb") as graph_file:
+    #     pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
+    # print("Saved graph.")
+
+    with open("rdf_graph.bin", "rb") as graph_file:
+        graph = pickle.load(graph_file)
+    rdf_format = "ttl"
 
     # entity_type_to_id = extract_entity_types(graph)
     # np.save(args.input.replace("." + rdf_format, "_types_dict"), entity_type_to_id)
-    entity_type_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_types_dict")).item()
+    entity_type_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_types_dict.npy")).item()
 
     # entity_to_id = extract_entities(graph, entity_type_to_id)
     # np.save(args.input.replace("." + rdf_format, "_entities_dict"), entity_to_id)
-    entity_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_entities_dict")).item()
+    entity_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_entities_dict.npy")).item()
 
     # property_to_id = extract_properties(graph, entity_to_id)
     # np.save(args.input.replace("." + rdf_format, "_relations_dict"), property_to_id)
-    property_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_relations_dict")).item()
+    property_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_relations_dict.npy")).item()
 
     # build adjacency matrices for all relations (object properties and type relations) in the graph
     # property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
