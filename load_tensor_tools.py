@@ -1,8 +1,10 @@
+import pickle
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 from rdflib import OWL, RDFS, Graph
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, load_npz, save_npz
 
 from tensor_models import DAGNode
 
@@ -22,64 +24,144 @@ def to_triples(X, order="pso"):
     return np.array(triples)
 
 
-def load_domains(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["domains"].item() if "domains" in dataset else None
+def load_domains(input_dir: str) -> Dict[int, int]:
+    print(f"Loading domains from {input_dir}")
+    domains: Dict[int, int] = np.load(input_dir).item()
+    return domains
 
 
-def load_ranges(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["ranges"].item() if "ranges" in dataset else None
+def save_domains(input_dir: str, domains: Dict[int, int]):
+    np.save(input_dir, domains)
+    print(f"Saved domains to {input_dir}")
 
 
-def load_type_hierarchy(input_dir):
-    dataset = np.load(input_dir)
-    hierarchy = dataset["type_hierarchy"].item() if "type_hierarchy" in dataset else None
-    for i, n in hierarchy.items():
+def load_ranges(input_dir: str) -> Dict[int, int]:
+    print(f"Loading ranges from {input_dir}")
+    ranges: Dict[int, int] = np.load(input_dir).item()
+    return ranges
+
+
+def save_ranges(input_dir: str, ranges: Dict[int, int]):
+    np.save(input_dir, ranges)
+    print(f"Saved ranges to {input_dir}")
+
+
+def load_type_hierarchy(input_dir: str) -> Dict[int, DAGNode]:
+    print(f"Loading entity type hierarchy DAG from {input_dir}")
+    hierarchy: Dict[int, DAGNode] = np.load(input_dir)
+    # Reverse the serialization by replacing the node ids with the actual nodes
+    for entity_type_id, entity_type_dag_node in hierarchy.items():
         try:
-            n.children = [hierarchy[c] for c in n.children]
-            n.parents = [hierarchy[p] for p in n.parents]
+            entity_type_dag_node.children = [hierarchy[child] for child in entity_type_dag_node.children]
+            entity_type_dag_node.parents = [hierarchy[parent] for parent in entity_type_dag_node.parents]
         except:
             pass
     return hierarchy
 
 
-def load_prop_hierarchy(input_dir):
-    dataset = np.load(input_dir)
-    hierarchy = dataset["prop_hierarchy"].item() if "prop_hierarchy" in dataset else None
-    for i, n in hierarchy.items():
+def save_type_hierarchy(input_dir: str, entity_type_hierarchy_dag: Dict[int, DAGNode]):
+    print("Replacing DAG nodes with ids in entity type DAG")
+    # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling
+    # the graph
+    for entity_type_id, entity_type_dag_node in entity_type_hierarchy_dag.items():
+        entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
+        entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
+
+    np.save(input_dir, entity_type_hierarchy_dag)
+    print(f"Saved entity type hierarchy DAG to {input_dir}")
+
+
+def load_prop_hierarchy(input_dir: str) -> Dict[int, DAGNode]:
+    print(f"Loading property hierarchy DAG from {input_dir}")
+    hierarchy: Dict[int, DAGNode] = np.load(input_dir)
+    # Reverse the serialization by replacing the node ids with the actual nodes
+    for property_id, property_dag_node in hierarchy.items():
         try:
-            n.children = [hierarchy[c] for c in n.children]
-            n.parents = [hierarchy[p] for p in n.parents]
+            property_dag_node.children = [hierarchy[children] for children in property_dag_node.children]
+            property_dag_node.parents = [hierarchy[parent] for parent in property_dag_node.parents]
         except:
             pass
     return hierarchy
 
 
-def load_entities_dict(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["entities_dict"].item() if "entities_dict" in dataset else None
+def save_prop_hierarchy(input_dir: str, property_hierarchy_dag: Dict[int, DAGNode]):
+    print("Replacing DAG nodes with ids in property type DAG")
+    # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling
+    # the graph
+    for property_id, property_dag_node in property_hierarchy_dag.items():
+        property_dag_node.children = [child.node_id for child in property_dag_node.children]
+        property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
+
+    np.save(input_dir, property_hierarchy_dag)
+    print(f"Saved property hierarchy DAG to {input_dir}")
 
 
-def load_types_dict(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["types_dict"].item() if "types_dict" in dataset else None
+def load_entities_dict(input_dir: str) -> Dict[str, int]:
+    print(f"Loading entity type dict from {input_dir}")
+    entity_to_id: Dict[str, int] = np.load(input_dir).item()
+    return entity_to_id
 
 
-def load_relations_dict(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["relations_dict"].item() if "relations_dict" in dataset else None
+def save_entities_dict(input_dir: str, entity_to_id: Dict[str, int]):
+    np.save(input_dir, entity_to_id)
+    print(f"Saved entity dict to {input_dir}")
 
 
-def loadGraphNpz(input_dir):
-    dataset = np.load(input_dir)
-    data = dataset["data"]
-    return data.tolist()
+def load_types_dict(input_dir: str) -> Dict[str, int]:
+    print(f"Loading entity type dict from {input_dir}")
+    entity_type_to_id: Dict[str, int] = np.load(input_dir).item()
+    return entity_type_to_id
 
 
-def loadTypesNpz(input_dir):
-    dataset = np.load(input_dir)
-    return dataset["types"].item()
+def save_types_dict(input_dir: str, entity_type_to_id: Dict[str, int]):
+    np.save(input_dir, entity_type_to_id)
+    print(f"Saved entity type dict to {input_dir}")
+
+
+def load_relations_dict(input_dir: str) -> Dict[str, int]:
+    print(f"Loading property type dict from {input_dir}")
+    property_to_id: Dict[str, int] = np.load(input_dir).item()
+    return property_to_id
+
+
+def save_relations_dict(input_dir: str, property_to_id: Dict[str, int]):
+    np.save(input_dir, property_to_id)
+    print(f"Saved property type dict to {input_dir}")
+
+
+def loadGraphNpz(input_dir: str) -> List[coo_matrix]:
+    print(f"Loading property adjacency matrices from {input_dir}")
+    loaded_matrices: List[coo_matrix] = []
+    index = 0
+    while True:
+        file_name = f"{input_dir}/{index}.npz"
+        try:
+            matrix: coo_matrix = load_npz(file_name)
+            loaded_matrices.append(matrix)
+        except FileNotFoundError:
+            break
+    print(f"Loaded {index} property adjacency matrices.")
+    return loaded_matrices
+
+
+def saveGraphNpz(input_dir: str, property_adjaceny_matrices: List[coo_matrix]):
+    Path(input_dir).mkdir(exist_ok=True)
+    print(f"Saving {len(property_adjaceny_matrices)} property adjacency matrices to {input_dir}")
+    for index, matrix in enumerate(property_adjaceny_matrices):
+        file_name = f"{input_dir}/{index}.npz"
+        save_npz(file_name, matrix)
+    print(f"Saved property adjacency matrices.")
+
+
+def loadTypesNpz(input_dir: str) -> coo_matrix:
+    print(f"Loading entity type adjacency matrix from {input_dir}")
+    entity_type_adjacency_matrix: coo_matrix = load_npz(input_dir)
+    return entity_type_adjacency_matrix
+
+
+def saveTypesNpz(input_dir: str, entity_type_adjacency_matrix: coo_matrix):
+    save_npz(input_dir, entity_type_adjacency_matrix)
+    print(f"Saved entity type adjacency matrix to {input_dir}")
 
 
 def coo_matrix_to_dict(matrix: coo_matrix):
@@ -106,13 +188,27 @@ def load_coo_matrix(input_dir: str) -> coo_matrix:
 
 def save_adjacency_matrices(input_dir: str, data: List[coo_matrix]):
     serialized = [coo_matrix_to_dict(matrix) for matrix in data]
-    np.savez(input_dir, data=serialized)
+    np.savez(input_dir, serialized)
 
 
 def load_adjacency_matrices(input_dir: str) -> List[coo_matrix]:
     loaded = np.load(input_dir)
-    data = loaded["data"].tolist()
+    data = loaded.tolist()
     return [dict_to_coo_matrix(element) for element in data]
+
+
+def save_graph_binary(filename: str, graph: Graph):
+    print("Saving graph...")
+    with open(filename, "wb") as graph_file:
+        pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
+    print("Saved graph.")
+
+
+def load_graph_binary(filename: str):
+    with open(filename, "rb") as graph_file:
+        graph = pickle.load(graph_file)
+    rdf_format = "ttl"
+    return graph, rdf_format
 
 
 # def load_relations_dict(input_path):

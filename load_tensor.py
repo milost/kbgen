@@ -1,13 +1,14 @@
-import pickle
 from pathlib import Path
 from typing import Dict, Tuple, List
 
 from rdflib import Graph
-import numpy as np
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
-from load_tensor_tools import get_ranges, get_domains, get_type_dag, get_prop_dag, save_adjacency_matrices
-from scipy.sparse import coo_matrix, save_npz
+from load_tensor_tools import get_ranges, get_domains, get_type_dag, get_prop_dag, load_graph_binary, \
+    save_graph_binary, load_type_hierarchy, save_type_hierarchy, load_prop_hierarchy, save_prop_hierarchy, \
+    load_domains, save_domains, load_ranges, save_ranges, load_entities_dict, save_entities_dict, load_types_dict, \
+    save_types_dict, load_relations_dict, save_relations_dict, loadTypesNpz, saveTypesNpz, loadGraphNpz, saveGraphNpz
+from scipy.sparse import coo_matrix
 
 
 def cli_args() -> Namespace:
@@ -209,106 +210,103 @@ def main():
     print(args)
 
     # load the graph and extract entities, entity types and object properties
-    # graph, rdf_format = load_graph(args.input)
+    binary_graph_filename = "rdf_graph.bin"
+    if Path(binary_graph_filename).exists():
+        graph, rdf_format = load_graph_binary("rdf_graph.bin")
+    else:
+        graph, rdf_format = load_graph(args.input)
+        save_graph_binary(binary_graph_filename, graph)
 
-    # print("Saving graph...")
-    # with open("rdf_graph.bin", "wb") as graph_file:
-    #     pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
-    # print("Saved graph.")
+    def filename(suffix: str, file_ending: str = None) -> str:
+        name = args.input.replace(f".{rdf_format}", f"_{suffix}")
+        if file_ending:
+            name = f"{name}.{file_ending}"
+        return name
 
-    with open("rdf_graph.bin", "rb") as graph_file:
-        graph = pickle.load(graph_file)
-    rdf_format = "ttl"
+    entity_type_dict_name = filename("types_dict", "npy")
+    if Path(entity_type_dict_name).exists():
+        entity_type_to_id = load_types_dict(entity_type_dict_name)
+    else:
+        entity_type_to_id = extract_entity_types(graph)
+        save_types_dict(entity_type_dict_name, entity_type_to_id)
 
-    # entity_type_to_id = extract_entity_types(graph)
-    # np.save(args.input.replace("." + rdf_format, "_types_dict"), entity_type_to_id)
-    entity_type_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_types_dict.npy")).item()
+    entity_dict_name = filename("entities_dict", "npy")
+    if Path(entity_dict_name).exists():
+        entity_to_id = load_entities_dict(entity_dict_name)
+    else:
+        entity_to_id = extract_entities(graph, entity_type_to_id)
+        save_entities_dict(entity_dict_name, entity_to_id)
 
-    # entity_to_id = extract_entities(graph, entity_type_to_id)
-    # np.save(args.input.replace("." + rdf_format, "_entities_dict"), entity_to_id)
-    entity_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_entities_dict.npy")).item()
+    property_dict_name = filename("relations_dict", "npy")
+    if Path(entity_dict_name).exists():
+        property_to_id = load_relations_dict(property_dict_name)
+    else:
+        property_to_id = extract_properties(graph, entity_to_id)
+        save_relations_dict(property_dict_name, property_to_id)
 
-    # property_to_id = extract_properties(graph, entity_to_id)
-    # np.save(args.input.replace("." + rdf_format, "_relations_dict"), property_to_id)
-    property_to_id: Dict[str, int] = np.load(args.input.replace("." + rdf_format, "_relations_dict.npy")).item()
+    adjacency_matrices_dir = "adjacency_matrices"
+    if Path(adjacency_matrices_dir).exists():
+        property_adjaceny_matrices = loadGraphNpz(adjacency_matrices_dir)
+    else:
+        # build adjacency matrices for all relations (object properties and type relations) in the graph
+        property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
+        saveGraphNpz(adjacency_matrices_dir, property_adjaceny_matrices)
 
-    # build adjacency matrices for all relations (object properties and type relations) in the graph
-    property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-    save_adjacency_matrices(args.input.replace("." + rdf_format, "_data"), property_adjaceny_matrices)
+    entity_matrix_name = filename("entity_type_matrix", "npz")
+    if Path(entity_matrix_name).exists():
+        entity_type_adjacency_matrix = loadTypesNpz(entity_matrix_name)
+    else:
+        entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
+        saveTypesNpz(entity_matrix_name, entity_type_adjacency_matrix)
 
-    # print(f"Saving entity type adjacency matrix")
-    # for index, matrix in enumerate(property_adjaceny_matrices):
-    #     file_name = "matrices/" + args.input.replace("." + rdf_format, f"_property_matrix_{index}.npz")
-    #     if Path(file_name).exists():
-    #         continue
-    #     save_npz(file_name, matrix)
-    # np.save(args.input.replace("." + rdf_format, "_data.npz"), property_adjaceny_matrices)
+    # DAG of the entity type/class hierarchy
+    entity_dag_name = filename("type_hierarchy", "npy")
+    if Path(entity_dag_name).exists():
+        entity_type_hierarchy_dag = load_type_hierarchy(entity_dag_name)
+    else:
+        entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
+        save_type_hierarchy(entity_dag_name, entity_type_hierarchy_dag)
 
-    # entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
-    # print(f"Saving {len(entity_type_adjacency_matrix)} entity type adjacency matrix")
-    # file_name = args.input.replace("." + rdf_format, f"_entity_type_matrix")
-    # save_npz(file_name, entity_type_adjacency_matrix)
-    # # np.save(args.input.replace("." + rdf_format, "_types.npz"), entity_type_adjacency_matrix)
-    #
-    # # DAG of the entity type/class hierarchy
-    # entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
-    # # DAG of the object property hierarchy
-    # object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
-    #
-    # print("Replacing DAG nodes with ids in entity type DAG")
-    # # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling the
-    # # graph
-    # for entity_type_id, entity_type_dag_node in entity_type_hierarchy_dag.items():
-    #     entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
-    #     entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
-    #
-    # np.save(args.input.replace("." + rdf_format, "_type_hierarchy.npz"), entity_type_hierarchy_dag)
-    #
-    # print("Replacing DAG nodes with ids in property type DAG")
-    # # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
-    # # graph
-    # for property_id, property_dag_node in object_property_hierarchy_dag.items():
-    #     property_dag_node.children = [child.node_id for child in property_dag_node.children]
-    #     property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
-    #
-    # np.save(args.input.replace("." + rdf_format, "_prop_hierarchy.npz"), object_property_hierarchy_dag)
-    #
-    # num_entity_types = len(entity_type_to_id or {})
-    # num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
-    # num_object_properties = len(entity_type_to_id or {})
-    # num_object_properties_in_hierarchy = len(object_property_hierarchy_dag or {})
-    #
-    # print(f"Loaded {num_entity_types} entity types, of which {num_entity_types_in_hierarchy} are contained in the "
-    #       f"hierarchy graph...")
-    # print(f"Loaded {num_object_properties} object properties, of which {num_object_properties_in_hierarchy} are "
-    #       f"contained in the hierarchy graph...")
-    #
-    # # explanation of domains and ranges: https://stackoverflow.com/a/9066520
-    # domains = get_domains(graph, property_to_id, entity_type_to_id)
-    # print(f"Loaded {len(domains)} relation domains...")
-    # np.save(args.input.replace("." + rdf_format, "_domains.npz"), domains)
-    #
-    # ranges = get_ranges(graph, property_to_id, entity_type_to_id)
-    # print(f"Loaded {len(ranges)} relation ranges...")
-    # np.save(args.input.replace("." + rdf_format, "_ranges.npz"), ranges)
-    #
+    # DAG of the object property hierarchy
+    property_dag_name = filename("prop_hierarchy", "npy")
+    if Path(property_dag_name).exists():
+        object_property_hierarchy_dag = load_prop_hierarchy(property_dag_name)
+    else:
+        object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
+        save_prop_hierarchy(property_dag_name, object_property_hierarchy_dag)
+
+    num_entity_types = len(entity_type_to_id or {})
+    num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
+    num_object_properties = len(entity_type_to_id or {})
+    num_object_properties_in_hierarchy = len(object_property_hierarchy_dag or {})
+
+    print(f"Loaded {num_entity_types} entity types, of which {num_entity_types_in_hierarchy} are contained in the "
+          f"hierarchy graph...")
+    print(f"Loaded {num_object_properties} object properties, of which {num_object_properties_in_hierarchy} are "
+          f"contained in the hierarchy graph...")
+
+    # explanation of domains and ranges: https://stackoverflow.com/a/9066520
+    domain_name = filename("domains", "npy")
+    if Path(domain_name).exists():
+        domains = load_domains(domain_name)
+    else:
+        domains = get_domains(graph, property_to_id, entity_type_to_id)
+        print(f"Loaded {len(domains)} relation domains...")
+        save_domains(domain_name, domains)
+
+    range_name = filename("ranges", "npy")
+    if Path(range_name).exists():
+        ranges = load_ranges(range_name)
+    else:
+        ranges = get_ranges(graph, property_to_id, entity_type_to_id)
+        print(f"Loaded {len(ranges)} relation ranges...")
+        save_ranges(range_name, ranges)
+
     # # TODO: don't know what this is for
     # rdfs = {"type_hierarchy": entity_type_hierarchy_dag,
     #         "prop_hierarchy": object_property_hierarchy_dag,
     #         "domains": domains,
     #         "ranges": ranges}
-
-    # serialize graph as .npz file
-    # np.savez(args.input.replace("." + rdf_format, ".npz"),
-    #          data=property_adjaceny_matrices,  # WARNING: this could be a problem with a huge dataset (e.g., DBpedia)
-    #          types=entity_type_adjacency_matrix,
-    #          entities_dict=entity_to_id,
-    #          relations_dict=property_to_id,
-    #          types_dict=entity_type_to_id,
-    #          type_hierarchy=entity_type_hierarchy_dag,
-    #          prop_hierarchy=object_property_hierarchy_dag,
-    #          domains=domains,
-    #          ranges=ranges)
 
 
 if __name__ == '__main__':
