@@ -213,14 +213,6 @@ def load_graph_binary(filename: str):
     return graph, rdf_format
 
 
-# def load_relations_dict(input_path):
-#     dataset = np.load(input_path)
-#     dict_rel = dataset["relations_dict"]
-#     if not isinstance(dict_rel, dict):
-#         dict_rel = dict_rel.item()
-#     return dict_rel
-
-
 def get_prop_dag(graph: Graph, property_to_id: Dict[str, int]) -> Dict[int, DAGNode]:
     """
     Creates a DAG of the object property hierarchy in the graph. This hierarchy is defined by the RDFS
