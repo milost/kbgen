@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 from rdflib import OWL, RDFS, Graph
@@ -82,17 +82,37 @@ def loadTypesNpz(input_dir):
     return dataset["types"].item()
 
 
-def save_coo_matrix(input_dir: str, matrix: coo_matrix):
+def coo_matrix_to_dict(matrix: coo_matrix):
     data = matrix.data
     rows: np.ndarray = matrix.row
     columns: np.ndarray = matrix.col
     shape = matrix.shape
-    np.savez(input_dir, data=data, rows=rows, columns=columns, shape=shape)
+    return {"data": data, "rows": rows, "columns": columns, "shape": shape}
+
+
+def dict_to_coo_matrix(data: dict):
+    return coo_matrix((data["data"], (data["rows"], data["columns"])), shape=data["shape"])
+
+
+def save_coo_matrix(input_dir: str, matrix: coo_matrix):
+    data = coo_matrix_to_dict(matrix)
+    np.savez(input_dir, data=data["data"], rows=data["rows"], columns=data["columns"], shape=data["shape"])
 
 
 def load_coo_matrix(input_dir: str) -> coo_matrix:
     loaded = np.load(input_dir)
-    return coo_matrix((loaded["data"], (loaded["rows"], loaded["columns"])), shape=loaded["shape"])
+    return dict_to_coo_matrix(loaded)
+
+
+def save_adjacency_matrices(input_dir: str, data: List[coo_matrix]):
+    serialized = [coo_matrix_to_dict(matrix) for matrix in data]
+    np.savez(input_dir, data=serialized)
+
+
+def load_adjacency_matrices(input_dir: str) -> List[coo_matrix]:
+    loaded = np.load(input_dir)
+    data = loaded["data"].tolist()
+    return [dict_to_coo_matrix(element) for element in data]
 
 
 # def load_relations_dict(input_path):
