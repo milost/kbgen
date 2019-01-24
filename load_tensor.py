@@ -236,7 +236,7 @@ def main():
     property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
     save_adjacency_matrices(args.input.replace("." + rdf_format, "_data"), property_adjaceny_matrices)
 
-    # print(f"Saving {len(property_adjaceny_matrices)} property adjacency matrices")
+    # print(f"Saving entity type adjacency matrix")
     # for index, matrix in enumerate(property_adjaceny_matrices):
     #     file_name = "matrices/" + args.input.replace("." + rdf_format, f"_property_matrix_{index}.npz")
     #     if Path(file_name).exists():
