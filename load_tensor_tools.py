@@ -198,15 +198,17 @@ def load_adjacency_matrices(input_dir: str) -> List[coo_matrix]:
 
 
 def save_graph_binary(filename: str, graph: Graph):
-    print("Saving graph...")
+    print(f"Saving graph to {filename}")
     with open(filename, "wb") as graph_file:
         pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
     print("Saved graph.")
 
 
 def load_graph_binary(filename: str):
+    print(f"Loading graph from {filename}")
     with open(filename, "rb") as graph_file:
         graph = pickle.load(graph_file)
+    print("Loaded graph.")
     rdf_format = "ttl"
     return graph, rdf_format
 
