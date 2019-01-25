@@ -9,10 +9,7 @@ class MultiType(object):
         return self.types == other.types
 
     def __hash__(self):
-        h = 1
-        for t in self.types:
-            h *= t
-        return int(h)
+        return self.types.__hash__()
 
     def __str__(self):
         return str(self.types)

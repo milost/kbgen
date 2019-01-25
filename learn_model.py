@@ -18,22 +18,22 @@ def cli_args() -> Namespace:
     return parser.parse_args()
 
 
-def build_m1_model(tensor_file: str, output_name: str) -> Tuple[KBModelM1, str]:
+def build_m1_model(tensor_files_dir: str, output_name: str) -> Tuple[KBModelM1, str]:
     """
     Build an M1 model from a Knowledge Graph.
-    :param tensor_file: path to file containing the numpy serialized Knowledge Graph
+    :param tensor_files_dir: path to directory containing the numpy serialized Knowledge Graph data structures
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M1 model and the output file name
     """
-    model = KBModelM1.generate_from_tensor(tensor_file)
+    model = KBModelM1.generate_from_tensor(tensor_files_dir)
     return model, f"{output_name}-M1.pkl"
 
 
-def build_m2_model(tensor_file: str, output_name: str) -> Tuple[KBModelM2, str]:
+def build_m2_model(tensor_files_dir: str, output_name: str) -> Tuple[KBModelM2, str]:
     """
     Build an M2 model from a Knowledge Graph and a previously built and serialized M1 model. The M1 model must have been
     serialized with the same output_name passed to this method.
-    :param tensor_file: path to file containing the numpy serialized Knowledge Graph
+    :param tensor_files_dir: path to directory containing the numpy serialized Knowledge Graph data structures
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M2 model and the output file name
     """
@@ -41,7 +41,7 @@ def build_m2_model(tensor_file: str, output_name: str) -> Tuple[KBModelM2, str]:
     m1_model = pickle.load(open(m1_model_path, "rb"))
     assert isinstance(m1_model, KBModelM1)
 
-    model = KBModelM2.generate_from_tensor_and_model(m1_model, tensor_file)
+    model = KBModelM2.generate_from_tensor_and_model(m1_model, tensor_files_dir)
     return model, f"{output_name}-M2.pkl"
 
 
@@ -81,11 +81,11 @@ def build_m4_model(output_name: str) -> Tuple[KBModelM2, str]:
     return model, f"{output_name}-M4.pkl"
 
 
-def build_e_models(tensor_file: str, kb_models: List[str], output_name: str) -> Tuple[List[KBModelM1], List[str]]:
+def build_e_models(tensor_files_dir: str, kb_models: List[str], output_name: str) -> Tuple[List[KBModelM1], List[str]]:
     """
     Builds e-models for every model type passed. These are generated from the Knowledge Graph and the subject and
     object distributions from the previous e-model, i.e. an eM2 model uses the distributions from an eM1 model.
-    :param tensor_file: path to file containing the numpy serialized Knowledge Graph
+    :param tensor_files_dir: path to directory containing the numpy serialized Knowledge Graph data structures
     :param kb_models: list of the model types for which e-models are generated (M1, M2, M3)
     :param output_name: name that is used for the output file name
     :return: tuple of a list of generated eMi models and a list of their output file names
@@ -99,7 +99,7 @@ def build_e_models(tensor_file: str, kb_models: List[str], output_name: str) -> 
         assert isinstance(m1_model, KBModelM1)
 
         if dist_subjects is None and dist_objects is None:
-            model = KBModelEMi.generate_from_tensor_and_model(m1_model, tensor_file)
+            model = KBModelEMi.generate_from_tensor_and_model(m1_model, tensor_files_dir)
             dist_subjects = model.dist_subjects
             dist_objects = model.dist_objects
         else:
