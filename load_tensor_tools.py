@@ -138,6 +138,7 @@ def loadGraphNpz(input_dir: str) -> List[coo_matrix]:
         try:
             matrix: coo_matrix = load_npz(file_name)
             loaded_matrices.append(matrix)
+            print(f"Loaded {index} property adjacency matrices.", end="\r")
         except FileNotFoundError:
             break
     print(f"Loaded {index} property adjacency matrices.")
