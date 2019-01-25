@@ -48,7 +48,7 @@ def save_ranges(input_dir: str, ranges: Dict[int, int]):
 
 def load_type_hierarchy(input_dir: str) -> Dict[int, DAGNode]:
     print(f"Loading entity type hierarchy DAG from {input_dir}")
-    hierarchy: Dict[int, DAGNode] = np.load(input_dir)
+    hierarchy: Dict[int, DAGNode] = np.load(input_dir).item()
     # Reverse the serialization by replacing the node ids with the actual nodes
     for entity_type_id, entity_type_dag_node in hierarchy.items():
         try:
@@ -73,7 +73,7 @@ def save_type_hierarchy(input_dir: str, entity_type_hierarchy_dag: Dict[int, DAG
 
 def load_prop_hierarchy(input_dir: str) -> Dict[int, DAGNode]:
     print(f"Loading property hierarchy DAG from {input_dir}")
-    hierarchy: Dict[int, DAGNode] = np.load(input_dir)
+    hierarchy: Dict[int, DAGNode] = np.load(input_dir).item()
     # Reverse the serialization by replacing the node ids with the actual nodes
     for property_id, property_dag_node in hierarchy.items():
         try:
