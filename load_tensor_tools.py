@@ -20,8 +20,8 @@ def filename(input_dir: str, file: str) -> str:
         "domains": ["domains", "npy"],
         "ranges": ["ranges", "npy"]
     }
-    name, ending = file_suffixes[file]
-    return f"{file}/{name}.{ending}"
+    suffix, filetype = file_suffixes[file]
+    return f"{input_dir}/{suffix}.{filetype}"
 
 
 def to_triples(X, order="pso"):
@@ -189,7 +189,7 @@ def save_graph_npz(input_dir: str, property_adjaceny_matrices: List[coo_matrix])
 def load_types_npz(input_dir: str) -> coo_matrix:
     file = filename(input_dir, "type_matrix")
     print(f"Loading entity type adjacency matrix from {file}")
-    entity_type_adjacency_matrix: coo_matrix = load_npz(input_dir)
+    entity_type_adjacency_matrix: coo_matrix = load_npz(file)
     return entity_type_adjacency_matrix
 
 
