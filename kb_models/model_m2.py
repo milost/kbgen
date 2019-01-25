@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, List, Set
 
-from load_tensor_tools import loadGraphNpz
+from load_tensor_tools import load_graph_npz
 from kb_models.model_m1 import KBModelM1
 from rdflib import Graph
 from scipy.sparse import csr_matrix
@@ -207,7 +207,7 @@ class KBModelM2(KBModelM1):
         :return: an M2 model generated from the tensor file and M1 model
         """
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = loadGraphNpz(input_path)
+        relation_adjaceny_matrices = load_graph_npz(input_path)
 
         # dictionary pointing from a relation id to the functionality score
         # this functionality score is the average number of outgoing edges an entity has of this relation type given

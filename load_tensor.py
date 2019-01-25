@@ -4,10 +4,7 @@ from typing import Dict, Tuple, List
 from rdflib import Graph
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
-from load_tensor_tools import get_ranges, get_domains, get_type_dag, get_prop_dag, load_graph_binary, \
-    save_graph_binary, load_type_hierarchy, save_type_hierarchy, load_prop_hierarchy, save_prop_hierarchy, \
-    load_domains, save_domains, load_ranges, save_ranges, load_entities_dict, save_entities_dict, load_types_dict, \
-    save_types_dict, load_relations_dict, save_relations_dict, loadTypesNpz, saveTypesNpz, loadGraphNpz, saveGraphNpz
+import load_tensor_tools as ltt
 from scipy.sparse import coo_matrix
 
 
@@ -209,71 +206,61 @@ def main():
     args = cli_args()
     print(args)
 
+    rdf_format = args.input[args.input.rindex(".") + 1:]
+    input_dir = args.input.replace(f".{rdf_format}", "")
+    Path(input_dir).mkdir(exist_ok=True)
+
     # load the graph and extract entities, entity types and object properties
-    binary_graph_filename = "rdf_graph.bin"
-    if Path(binary_graph_filename).exists():
-        graph, rdf_format = load_graph_binary("rdf_graph.bin")
-    else:
+    try:
+        graph, rdf_format = ltt.load_graph_binary(input_dir)
+    except FileNotFoundError:
         graph, rdf_format = load_graph(args.input)
-        save_graph_binary(binary_graph_filename, graph)
+        ltt.save_graph_binary(input_dir, graph)
 
-    def filename(suffix: str, file_ending: str = None) -> str:
-        name = args.input.replace(f".{rdf_format}", f"_{suffix}")
-        if file_ending:
-            name = f"{name}.{file_ending}"
-        return name
-
-    entity_type_dict_name = filename("types_dict", "npy")
-    if Path(entity_type_dict_name).exists():
-        entity_type_to_id = load_types_dict(entity_type_dict_name)
-    else:
+    try:
+        entity_type_to_id = ltt.load_types_dict(input_dir)
+    except FileNotFoundError:
         entity_type_to_id = extract_entity_types(graph)
-        save_types_dict(entity_type_dict_name, entity_type_to_id)
+        ltt.save_types_dict(input_dir, entity_type_to_id)
 
-    entity_dict_name = filename("entities_dict", "npy")
-    if Path(entity_dict_name).exists():
-        entity_to_id = load_entities_dict(entity_dict_name)
-    else:
+    try:
+        entity_to_id = ltt.load_entities_dict(input_dir)
+    except FileNotFoundError:
         entity_to_id = extract_entities(graph, entity_type_to_id)
-        save_entities_dict(entity_dict_name, entity_to_id)
+        ltt.save_entities_dict(input_dir, entity_to_id)
 
-    property_dict_name = filename("relations_dict", "npy")
-    if Path(entity_dict_name).exists():
-        property_to_id = load_relations_dict(property_dict_name)
-    else:
+    try:
+        property_to_id = ltt.load_relations_dict(input_dir)
+    except FileNotFoundError:
         property_to_id = extract_properties(graph, entity_to_id)
-        save_relations_dict(property_dict_name, property_to_id)
+        ltt.save_relations_dict(input_dir, property_to_id)
 
-    adjacency_matrices_dir = "adjacency_matrices"
-    if Path(adjacency_matrices_dir).exists():
-        property_adjaceny_matrices = loadGraphNpz(adjacency_matrices_dir)
-    else:
+    try:
+        property_adjaceny_matrices = ltt.load_graph_npz(input_dir)
+    except FileNotFoundError:
         # build adjacency matrices for all relations (object properties and type relations) in the graph
         property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-        saveGraphNpz(adjacency_matrices_dir, property_adjaceny_matrices)
+        ltt.save_graph_npz(input_dir, property_adjaceny_matrices)
 
-    entity_matrix_name = filename("entity_type_matrix", "npz")
-    if Path(entity_matrix_name).exists():
-        entity_type_adjacency_matrix = loadTypesNpz(entity_matrix_name)
-    else:
+    try:
+        entity_type_adjacency_matrix = ltt.load_types_npz(input_dir)
+    except FileNotFoundError:
         entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
-        saveTypesNpz(entity_matrix_name, entity_type_adjacency_matrix)
+        ltt.save_types_npz(input_dir, entity_type_adjacency_matrix)
 
     # DAG of the entity type/class hierarchy
-    entity_dag_name = filename("type_hierarchy", "npy")
-    if Path(entity_dag_name).exists():
-        entity_type_hierarchy_dag = load_type_hierarchy(entity_dag_name)
-    else:
-        entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
-        save_type_hierarchy(entity_dag_name, entity_type_hierarchy_dag)
+    try:
+        entity_type_hierarchy_dag = ltt.load_type_hierarchy(input_dir)
+    except FileNotFoundError:
+        entity_type_hierarchy_dag = ltt.get_type_dag(graph, entity_type_to_id)
+        ltt.save_type_hierarchy(input_dir, entity_type_hierarchy_dag)
 
     # DAG of the object property hierarchy
-    property_dag_name = filename("prop_hierarchy", "npy")
-    if Path(property_dag_name).exists():
-        object_property_hierarchy_dag = load_prop_hierarchy(property_dag_name)
-    else:
-        object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
-        save_prop_hierarchy(property_dag_name, object_property_hierarchy_dag)
+    try:
+        object_property_hierarchy_dag = ltt.load_prop_hierarchy(input_dir)
+    except FileNotFoundError:
+        object_property_hierarchy_dag = ltt.get_prop_dag(graph, property_to_id)
+        ltt.save_prop_hierarchy(input_dir, object_property_hierarchy_dag)
 
     num_entity_types = len(entity_type_to_id or {})
     num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
@@ -286,21 +273,19 @@ def main():
           f"contained in the hierarchy graph...")
 
     # explanation of domains and ranges: https://stackoverflow.com/a/9066520
-    domain_name = filename("domains", "npy")
-    if Path(domain_name).exists():
-        domains = load_domains(domain_name)
-    else:
-        domains = get_domains(graph, property_to_id, entity_type_to_id)
+    try:
+        domains = ltt.load_domains(input_dir)
+    except FileNotFoundError:
+        domains = ltt.get_domains(graph, property_to_id, entity_type_to_id)
         print(f"Loaded {len(domains)} relation domains...")
-        save_domains(domain_name, domains)
+        ltt.save_domains(input_dir, domains)
 
-    range_name = filename("ranges", "npy")
-    if Path(range_name).exists():
-        ranges = load_ranges(range_name)
-    else:
-        ranges = get_ranges(graph, property_to_id, entity_type_to_id)
+    try:
+        ranges = ltt.load_ranges(input_dir)
+    except FileNotFoundError:
+        ranges = ltt.get_ranges(graph, property_to_id, entity_type_to_id)
         print(f"Loaded {len(ranges)} relation ranges...")
-        save_ranges(range_name, ranges)
+        ltt.save_ranges(input_dir, ranges)
 
     # # TODO: don't know what this is for
     # rdfs = {"type_hierarchy": entity_type_hierarchy_dag,

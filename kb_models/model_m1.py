@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, List, Iterable, Optional
 
-from load_tensor_tools import loadGraphNpz, loadTypesNpz, load_types_dict, load_relations_dict, load_type_hierarchy, \
+from load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, load_type_hierarchy, \
     load_prop_hierarchy, load_domains, load_ranges
 from kb_models.model import KBModel
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
@@ -619,7 +619,7 @@ class KBModelM1(KBModel):
     def generate_from_tensor(input_path: str, debug: bool = False) -> 'KBModelM1':
         """
         Generates an M1 model from the specified tensor file.
-        :param input_path: path to the numpy tensor file
+        :param input_path: path to the directory containing the numpy-serialized data
         :param debug: boolean indicating if the logging level is on debug
         :return: an M1 model generated from the tensor file
         """
@@ -629,11 +629,12 @@ class KBModelM1(KBModel):
             logger = create_logger(logging.INFO)
 
         logger.info("Loading data...")
+
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = loadGraphNpz(input_path)
+        relation_adjaceny_matrices = load_graph_npz(input_path)
 
         # the entity type adjacency matrix created in load_tensor
-        entity_types = loadTypesNpz(input_path)
+        entity_types = load_types_npz(input_path)
 
         # the rdf domains and ranges created in load_tensor
         domains = load_domains(input_path)

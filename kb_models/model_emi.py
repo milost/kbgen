@@ -5,7 +5,7 @@ from typing import Dict, List
 import numpy as np
 from scipy.stats import pareto, zipf, powerlaw, uniform, expon, foldnorm, truncexpon, truncnorm
 
-from load_tensor_tools import loadGraphNpz, loadTypesNpz
+from load_tensor_tools import load_graph_npz, load_types_npz
 from kb_models.model_m1 import KBModelM1
 from util_models import MultiType
 
@@ -118,10 +118,10 @@ class KBModelEMi(KBModelM1):
         :return: an eMi model generated from the tensor file and M1/M2/M3 model
         """
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = loadGraphNpz(input_path)
+        relation_adjaceny_matrices = load_graph_npz(input_path)
 
         # the entity type adjacency matrix created in load_tensor
-        entity_types = loadTypesNpz(input_path).tocsr()
+        entity_types = load_types_npz(input_path).tocsr()
 
         # number of different relations (object properties)
         number_of_relations = len(relation_adjaceny_matrices)
