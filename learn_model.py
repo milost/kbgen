@@ -2,8 +2,7 @@ import pickle
 from argparse import ArgumentParser, Namespace
 from typing import Tuple, List
 
-from kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelEMi
-from kb_models.model_m4 import KBModelM4
+from kbgen.kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelM4, KBModelEMi
 from rules import RuleSet
 
 

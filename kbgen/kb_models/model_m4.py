@@ -1,10 +1,9 @@
-import pickle
 import random
 from typing import Dict
 
 from rdflib import Graph
 
-from kb_models import KBModelM3
+from kbgen.kb_models import KBModelM3
 from rules import Rule
 from util_models import URIRelation
 from util_models.oracle import Oracle

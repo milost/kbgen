@@ -6,10 +6,9 @@ from typing import Dict, Set, Tuple
 import numpy as np
 import tqdm
 from matplotlib import pyplot as plt
-from kb_models.model_m2 import KBModelM2
+from kbgen.kb_models.model_m2 import KBModelM2
 from numpy.random import choice
 from rdflib import Graph, URIRef
-from rdflib.namespace import RDF
 import datetime
 
 from rules import RuleSet

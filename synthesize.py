@@ -4,8 +4,8 @@ from typing import Dict
 
 from rdflib import Graph, URIRef
 
-from kb_models import KBModelM1
-from kb_models.model_m4 import KBModelM4
+from kbgen.kb_models import KBModelM1
+from kbgen.kb_models import KBModelM4
 from util import dump_tsv
 from util_models import URIRelation, URIType
 

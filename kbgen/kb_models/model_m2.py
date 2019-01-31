@@ -1,7 +1,7 @@
-from typing import Dict, Tuple, List, Set
+from typing import Dict, Tuple, List
 
 from load_tensor_tools import load_graph_npz
-from kb_models.model_m1 import KBModelM1
+from kbgen.kb_models import KBModelM1
 from rdflib import Graph
 from scipy.sparse import csr_matrix
 
