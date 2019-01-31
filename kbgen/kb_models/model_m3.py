@@ -6,14 +6,14 @@ from typing import Dict, Set, Tuple
 import numpy as np
 import tqdm
 from matplotlib import pyplot as plt
-from kbgen.kb_models.model_m2 import KBModelM2
 from numpy.random import choice
 from rdflib import Graph, URIRef
 import datetime
 
-from kbgen.rules import RuleSet
-from kbgen.util_models import URIEntity, URIRelation, MultiType
-from util import normalize, create_logger
+from .model_m2 import KBModelM2
+from ..rules import RuleSet
+from ..util_models import URIEntity, URIRelation, MultiType
+from ..util import normalize, create_logger
 
 
 class KBModelM3(KBModelM2):

@@ -6,7 +6,7 @@ import numpy as np
 from rdflib import OWL, RDFS, Graph
 from scipy.sparse import coo_matrix, load_npz, save_npz
 
-from kbgen.tensor_models import DAGNode
+from .tensor_models import DAGNode
 
 
 def filename(input_dir: str, file: str) -> str:

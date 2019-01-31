@@ -1,18 +1,18 @@
-from typing import Dict, Tuple, List, Iterable, Optional
-
-from load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, load_type_hierarchy, \
-    load_prop_hierarchy, load_domains, load_ranges
-from kbgen.kb_models.model import KBModel
-from rdflib import Graph, RDF, OWL, RDFS, URIRef
-from numpy.random import choice, randint
-
-from kbgen.tensor_models import DAGNode
-from kbgen.util_models import URIEntity, URIRelation, URIType, MultiType
-from util import normalize, create_logger
-import logging
-from scipy.sparse import csr_matrix
 import tqdm
 import datetime
+import logging
+
+from rdflib import Graph, RDF, OWL, RDFS, URIRef
+from numpy.random import choice, randint
+from typing import Dict, Tuple, List, Iterable, Optional
+from scipy.sparse import csr_matrix
+
+from ..load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, \
+    load_type_hierarchy, load_prop_hierarchy, load_domains, load_ranges
+from .model import KBModel
+from ..tensor_models import DAGNode
+from ..util_models import URIEntity, URIRelation, URIType, MultiType
+from ..util import normalize, create_logger
 
 
 class KBModelM1(KBModel):

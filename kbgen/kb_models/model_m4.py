@@ -3,9 +3,9 @@ from typing import Dict
 
 from rdflib import Graph
 
-from kbgen.kb_models import KBModelM3
-from kbgen.rules import Rule
-from kbgen.util_models import URIRelation, Oracle
+from .model_m3 import KBModelM3
+from ..rules import Rule
+from ..util_models import URIRelation, Oracle
 
 
 class KBModelM4(KBModelM3):

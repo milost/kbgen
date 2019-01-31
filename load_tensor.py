@@ -4,7 +4,7 @@ from typing import Dict, Tuple, List
 from rdflib import Graph
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
-import load_tensor_tools as ltt
+from kbgen import load_tensor_tools as ltt
 from scipy.sparse import coo_matrix
 
 

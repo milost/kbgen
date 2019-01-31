@@ -5,9 +5,9 @@ from typing import Dict, List
 import numpy as np
 from scipy.stats import pareto, zipf, powerlaw, uniform, expon, foldnorm, truncexpon, truncnorm
 
-from load_tensor_tools import load_graph_npz, load_types_npz
-from kbgen.kb_models import KBModelM1
-from kbgen.util_models import MultiType
+from ..load_tensor_tools import load_graph_npz, load_types_npz
+from .model_m1 import KBModelM1
+from ..util_models import MultiType
 
 models_dict = {"pareto": pareto,
                "zipf": zipf,
