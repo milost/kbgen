@@ -5,8 +5,8 @@ from rdflib import Graph
 
 from kbgen.kb_models import KBModelM3
 from kbgen.rules import Rule
-from util_models import URIRelation
-from util_models.oracle import Oracle
+from kbgen.util_models import URIRelation
+from kbgen.util_models import Oracle
 
 
 class KBModelM4(KBModelM3):

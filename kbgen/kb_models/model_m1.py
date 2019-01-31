@@ -7,7 +7,7 @@ from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
 
 from kbgen.tensor_models import DAGNode
-from util_models import URIEntity, URIRelation, URIType, MultiType
+from kbgen.util_models import URIEntity, URIRelation, URIType, MultiType
 from util import normalize, create_logger
 import logging
 from scipy.sparse import csr_matrix

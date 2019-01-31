@@ -1,4 +1,4 @@
-from util_models import URIEntity
+from kbgen.util_models import URIEntity
 
 
 class URIRelation(URIEntity):

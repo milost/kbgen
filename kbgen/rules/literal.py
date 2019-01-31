@@ -3,7 +3,7 @@ from typing import Optional, Dict
 
 from rdflib import URIRef
 
-from util_models import URIRelation
+from kbgen.util_models import URIRelation
 
 
 class Literal(object):

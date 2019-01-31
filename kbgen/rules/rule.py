@@ -4,7 +4,7 @@ from typing import Dict, Optional, List, Tuple
 from rdflib import URIRef, Graph
 
 from kbgen.rules import Literal
-from util_models import URIRelation
+from kbgen.util_models import URIRelation
 
 
 class Rule(object):

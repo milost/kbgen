@@ -12,7 +12,7 @@ from rdflib import Graph, URIRef
 import datetime
 
 from kbgen.rules import RuleSet
-from util_models import URIEntity, URIRelation, MultiType
+from kbgen.util_models import URIEntity, URIRelation, MultiType
 from util import normalize, create_logger
 
 
