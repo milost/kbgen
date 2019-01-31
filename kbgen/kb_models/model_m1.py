@@ -6,7 +6,7 @@ from kbgen.kb_models.model import KBModel
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
 
-from tensor_models import DAGNode
+from kbgen.tensor_models import DAGNode
 from util_models import URIEntity, URIRelation, URIType, MultiType
 from util import normalize, create_logger
 import logging
