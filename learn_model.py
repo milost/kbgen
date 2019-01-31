@@ -3,7 +3,7 @@ from argparse import ArgumentParser, Namespace
 from typing import Tuple, List
 
 from kbgen.kb_models import KBModelM1, KBModelM2, KBModelM3, KBModelM4, KBModelEMi
-from rules import RuleSet
+from kbgen.rules import RuleSet
 
 
 def cli_args() -> Namespace:

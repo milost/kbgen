@@ -11,7 +11,7 @@ from numpy.random import choice
 from rdflib import Graph, URIRef
 import datetime
 
-from rules import RuleSet
+from kbgen.rules import RuleSet
 from util_models import URIEntity, URIRelation, MultiType
 from util import normalize, create_logger
 

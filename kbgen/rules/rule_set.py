@@ -2,7 +2,7 @@ from typing import Dict, List
 
 from rdflib import URIRef
 
-from rules import Rule
+from kbgen.rules import Rule
 
 
 class RuleSet(object):

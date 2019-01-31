@@ -4,7 +4,7 @@ from typing import Dict, List
 
 from rdflib import URIRef
 
-from rules import Literal, Rule
+from kbgen.rules import Literal, Rule
 
 
 class RuleStats(Rule):

@@ -3,7 +3,7 @@ from typing import Dict, Optional, List, Tuple
 
 from rdflib import URIRef, Graph
 
-from rules import Literal
+from kbgen.rules import Literal
 from util_models import URIRelation
 
 

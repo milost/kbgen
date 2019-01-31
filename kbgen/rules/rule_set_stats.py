@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from rules import RuleSet, Rule
+from kbgen.rules import RuleSet, Rule
 
 
 class RuleSetStats(RuleSet):

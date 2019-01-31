@@ -1,7 +1,7 @@
 import json
 from typing import Dict, TextIO, Optional
 
-from rules import Rule
+from kbgen.rules import Rule
 
 
 class Oracle(object):

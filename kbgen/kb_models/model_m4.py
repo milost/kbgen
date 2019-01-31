@@ -4,7 +4,7 @@ from typing import Dict
 from rdflib import Graph
 
 from kbgen.kb_models import KBModelM3
-from rules import Rule
+from kbgen.rules import Rule
 from util_models import URIRelation
 from util_models.oracle import Oracle
 
