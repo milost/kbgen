@@ -626,7 +626,7 @@ class KBModelM1(KBModel):
         if debug:
             logger = create_logger(logging.DEBUG)
         else:
-            logger = create_logger(logging.INFO)
+            logger = create_logger(logging.INFO, log_to_console=True)
 
         logger.info("Loading data...")
 

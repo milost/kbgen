@@ -78,6 +78,8 @@ def main():
     if isinstance(model, KBModelM4):
         with open(f"{args.output}-oracle.json", "w") as oracle_file:
             model.oracle.to_json(oracle_file)
+        with open(f"{args.output}-oracle.bin", "wb") as oracle_file:
+            pickle.dump(model.oracle, oracle_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     formats = ["n3", "ttl"]
 

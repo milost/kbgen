@@ -7,13 +7,13 @@ import logging
 from rdflib import Graph
 
 
-def create_logger(level=logging.INFO, name="kbgen", debug_to_console=False) -> logging.Logger:
+def create_logger(level=logging.INFO, name="kbgen", log_to_console=False) -> logging.Logger:
     """
     Creates a logger that logs to a file and optionally to stdout as well.
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    if debug_to_console:
+    if log_to_console:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         logger.addHandler(console_handler)

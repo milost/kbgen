@@ -158,8 +158,12 @@ def save_relations_dict(input_dir: str, property_to_id: Dict[str, int]):
     print(f"Saved property type dict to {file}")
 
 
+def graph_npz_dir(input_dir: str) -> str:
+    return f"{input_dir}/adjacency_matrices"
+
+
 def load_graph_npz(input_dir: str) -> List[coo_matrix]:
-    directory = f"{input_dir}/adjacency_matrices"
+    directory = graph_npz_dir(input_dir)
     print(f"Loading property adjacency matrices from {directory}")
     loaded_matrices: List[coo_matrix] = []
     index = 0
@@ -177,8 +181,8 @@ def load_graph_npz(input_dir: str) -> List[coo_matrix]:
 
 
 def save_graph_npz(input_dir: str, property_adjaceny_matrices: List[coo_matrix]):
-    directory = f"{input_dir}/adjacency_matrices"
-    Path(input_dir).mkdir(exist_ok=True)
+    directory = graph_npz_dir(input_dir)
+    Path(directory).mkdir(exist_ok=True)
     print(f"Saving {len(property_adjaceny_matrices)} property adjacency matrices to {directory}")
     for index, matrix in enumerate(property_adjaceny_matrices):
         file_name = f"{directory}/{index}.npz"
@@ -195,7 +199,7 @@ def load_types_npz(input_dir: str) -> coo_matrix:
 
 def save_types_npz(input_dir: str, entity_type_adjacency_matrix: coo_matrix):
     file = filename(input_dir, "type_matrix")
-    save_npz(input_dir, entity_type_adjacency_matrix)
+    save_npz(file, entity_type_adjacency_matrix)
     print(f"Saved entity type adjacency matrix to {file}")
 
 

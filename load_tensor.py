@@ -235,9 +235,9 @@ def main():
         property_to_id = extract_properties(graph, entity_to_id)
         ltt.save_relations_dict(input_dir, property_to_id)
 
-    try:
+    if Path(ltt.graph_npz_dir(input_dir)).exists():
         property_adjaceny_matrices = ltt.load_graph_npz(input_dir)
-    except FileNotFoundError:
+    else:
         # build adjacency matrices for all relations (object properties and type relations) in the graph
         property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
         ltt.save_graph_npz(input_dir, property_adjaceny_matrices)
