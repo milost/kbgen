@@ -27,7 +27,7 @@ class KBModelM4(KBModelM3):
         self.oracle: Oracle = None
 
     def break_rule(self, graph: Graph, rule: Rule, target_confidence: float = None) -> None:
-        target_confidence = target_confidence or rule.standard_confidence
+        target_confidence = target_confidence or random.random() / 2.0 + 0.5
         self.logger.info(f"Breaking rule {rule} with factor {target_confidence}")
 
         if rule not in self.facts_to_correctness:

@@ -564,6 +564,9 @@ class KBModelM1(KBModel):
         self.logger = create_logger(level, name="kbgen")
         self.synth_time_logger = create_logger(level, name="synth_time")
 
+        # replace the stored multitype indices with the correct objects
+        self.replace_multitype_indices()
+
         # scale the entity and edge count by the given size
         self.step = 1.0 / size
         num_synthetic_entities = int(self.entity_count / self.step)
@@ -619,15 +622,33 @@ class KBModelM1(KBModel):
         self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
         return graph
 
+    def replace_multitype_indices(self):
+        domain_distributions = self.relation_domain_distribution
+        range_distribution = self.relation_range_distribution
+        reverse_index = {index: MultiType(multitype) for multitype, index in self.multitype_index.items()}
+
+        domain_distributions = {relation_id: {reverse_index[multitype]: count
+                                              for multitype, count in distribution.items()}
+                                for relation_id, distribution in domain_distributions.items()}
+        self.relation_domain_distribution = domain_distributions
+
+        range_distribution = {relation_id: {reverse_index[subject_type]: {reverse_index[object_type]: count
+                                                                          for object_type, count in distribution.items()
+                                                                          }
+                                            for subject_type, distribution in domains.items()}
+                              for relation_id, domains in range_distribution.items()}
+        self.relation_range_distribution = range_distribution
+
+
     @staticmethod
-    def extract_relation_distribution(relation_adjaceny_matrices: List[coo_matrix], entity_types: csr_matrix):
+    def extract_relation_distribution(relation_adjacency_matrices: List[coo_matrix], entity_types: csr_matrix):
 
         class MultiTypeIndex(dict):
             def __init__(self, *args):
                 super(MultiTypeIndex, self).__init__(args)
 
             def __getitem__(self, item):
-                if not self.__contains__(item):
+                if item not in self:
                     index = len(self)
                     self.__setitem__(item, index)
                     return index
@@ -655,17 +676,17 @@ class KBModelM1(KBModel):
         # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
         relation_range_distribution: Dict[int, Dict[int, Dict[int, int]]] = {}
 
-        for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
+        for relation_id in tqdm.tqdm(range(len(relation_adjacency_matrices))):
             # create empty inner dictionaries for the current relation
             domain_distribution = {}
             range_distribution = {}
 
-            subject_ids_row = relation_adjaceny_matrices[relation_id].row
-            object_ids_row = relation_adjaceny_matrices[relation_id].col
+            subject_ids_row = relation_adjacency_matrices[relation_id].row
+            object_ids_row = relation_adjacency_matrices[relation_id].col
 
             # iterate over all non-zero fields of the adjacency matrix
             # iterate over all edges that exist for the current relation
-            for index in range(relation_adjaceny_matrices[relation_id].nnz):
+            for index in range(relation_adjacency_matrices[relation_id].nnz):
                 # get subject and object id from the adjacency matrix
                 subject_id = subject_ids_row[index]
                 object_id = object_ids_row[index]
@@ -708,14 +729,14 @@ class KBModelM1(KBModel):
         :return: an M1 model generated from the tensor file
         """
         if debug:
-            logger = create_logger(logging.DEBUG)
+            logger = create_logger(logging.DEBUG, log_to_console=True)
         else:
-            logger = create_logger(logging.INFO)
+            logger = create_logger(logging.INFO, log_to_console=True)
 
         logger.info("Loading data...")
 
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = load_graph_npz(input_path)
+        relation_adjacency_matrices = load_graph_npz(input_path)
 
         # the entity type adjacency matrix created in load_tensor
         entity_types = load_types_npz(input_path)
@@ -742,9 +763,9 @@ class KBModelM1(KBModel):
         count_entities = entity_types.shape[0]
         count_types = entity_types.shape[1]
         # number of different relations (object properties)
-        count_relations = len(relation_adjaceny_matrices)
+        count_relations = len(relation_adjacency_matrices)
         # number of object property edges (number of non zero fields in every adjacency matrix)
-        count_facts = sum([Xi.nnz for Xi in relation_adjaceny_matrices])
+        count_facts = sum([Xi.nnz for Xi in relation_adjacency_matrices])
 
         # the distribution of entities over entity types
         # the number of occurrences of every set of entity types that occurs
@@ -759,14 +780,14 @@ class KBModelM1(KBModel):
 
             entity_type_distribution[entity_type_set] += 1
 
-        logger.info("Building multi type index and learning relations distributions...")
+        logger.info("Building learning relations distributions...")
         # the distribution of facts over relations (object properties)
         # dictionary pointing from the id of an object property (relation) to the number of edges that exist for that
         # relation
-        relation_distribution = {relation_id: relation_adjaceny_matrices[relation_id].nnz
-                                 for relation_id in range(len(relation_adjaceny_matrices))}
+        relation_distribution = {relation_id: relation_adjacency_matrices[relation_id].nnz
+                                 for relation_id in range(len(relation_adjacency_matrices))}
 
-        computed_distributions = KBModelM1.extract_relation_distribution(relation_adjaceny_matrices, entity_types)
+        computed_distributions = KBModelM1.extract_relation_distribution(relation_adjacency_matrices, entity_types)
         domain_distribution, range_distribution, multitype_index = computed_distributions
 
         naive_model = KBModelM1(
