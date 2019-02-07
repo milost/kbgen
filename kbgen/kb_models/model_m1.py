@@ -1,11 +1,12 @@
 import tqdm
 import datetime
 import logging
+import numpy as np
 
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
 from typing import Dict, Tuple, List, Iterable, Optional
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, coo_matrix
 
 from ..load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, \
     load_type_hierarchy, load_prop_hierarchy, load_domains, load_ranges
@@ -35,7 +36,8 @@ class KBModelM1(KBModel):
                  relation_domain_distribution: Dict[int, Dict[MultiType, int]],
                  relation_range_distribution: Dict[int, Dict[MultiType, Dict[MultiType, int]]],
                  relation_to_id: Dict[URIRef, int],
-                 entity_type_to_id: Dict[URIRef, int] = None):
+                 entity_type_to_id: Dict[URIRef, int] = None,
+                 multi_type_index: Dict[str, int] = None):
         """
         Creates an M1 model with the passed data.
         :param entity_type_hierarchy: dictionary pointing from an entity type's id to its DAGNode in the hierarchy of
@@ -81,6 +83,8 @@ class KBModelM1(KBModel):
         self.entity_type_to_id = entity_type_to_id
         self.domains = domains
         self.ranges = ranges
+
+        self.multi_type_index = multi_type_index
 
         self.entity_type_hierarchy = entity_type_hierarchy
         self.object_property_hierarchy = object_property_hierarchy
@@ -616,6 +620,91 @@ class KBModelM1(KBModel):
         return graph
 
     @staticmethod
+    def extract_relation_distribution(relation_adjaceny_matrices: List[coo_matrix], entity_types: csr_matrix):
+        print("Building multi type index")
+
+        def to_multitype(type_list: List[int]):
+            unique_types = sorted(list(set(type_list)))
+            return " ".join([str(t) for t in unique_types])
+
+        multitype_index: Dict[str, int] = {}
+
+        def add_multitype(multitype: str) -> int:
+            if multitype not in multitype_index:
+                multitype_index[multitype] = len(multitype_index)
+            return multitype_index[multitype]
+
+        for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
+            subject_ids_row = relation_adjaceny_matrices[relation_id].row
+            object_ids_row = relation_adjaceny_matrices[relation_id].col
+            for index in range(relation_adjaceny_matrices[relation_id].nnz):
+                # get subject and object id from the adjacency matrix
+                subject_id = subject_ids_row[index]
+                object_id = object_ids_row[index]
+                # create multi types from the two sets of entity types for each the subject and the object
+                subject_multi_type = to_multitype(entity_types[subject_id].indices)
+                add_multitype(subject_multi_type)
+                object_multi_type = to_multitype(entity_types[object_id].indices)
+                add_multitype(object_multi_type)
+
+        print("Learning relations distributions...")
+
+        # the distribution of subject entity types given the relation (object property)
+        # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
+        # every relation
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # number of occurrences of that subject's multi type
+        relation_domain_distribution: Dict[int, Dict[int, int]] = {}
+
+        # the distribution of object entity types given relation and subject entity type
+        # the number of times that a multi types occurs in a relation as an object for every relation and for every
+        # subject's multi type (i.e., the number of occurrences for a specific relation with a specific subject's entity
+        # type)
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
+        relation_range_distribution: Dict[int, Dict[int, Dict[int, int]]] = {}
+
+        for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
+            # create empty inner dictionaries for the current relation
+            domain_distribution = {}
+            range_distribution = {}
+
+            subject_ids_row = relation_adjaceny_matrices[relation_id].row
+            object_ids_row = relation_adjaceny_matrices[relation_id].col
+
+            # iterate over all non-zero fields of the adjacency matrix
+            # iterate over all edges that exist for the current relation
+            for index in range(relation_adjaceny_matrices[relation_id].nnz):
+                # get subject and object id from the adjacency matrix
+                subject_id = subject_ids_row[index]
+                object_id = object_ids_row[index]
+                # create multi types from the two sets of entity types for each the subject and the object
+                subject_multi_type = multitype_index[to_multitype(entity_types[subject_id].indices)]
+                object_multi_type = multitype_index[to_multitype(entity_types[object_id].indices)]
+
+                # if the subject's multi type is not known add it to the relation domain distribution and create an
+                # empty relation range distribution for that multi type
+                if subject_multi_type not in domain_distribution:
+                    domain_distribution[subject_multi_type] = 0
+                    range_distribution[subject_multi_type] = {}
+
+                # if the object's multi type is not known add it to the relation range distribution of the subject's
+                # multi type
+                if object_multi_type not in range_distribution[subject_multi_type]:
+                    range_distribution[subject_multi_type][object_multi_type] = 0
+
+                # increment the number of occurrences of the subject's multi type in the relation domain distribution
+                    domain_distribution[subject_multi_type] += 1
+                # increment the number of occurrences of the object's multi type in the relation range distribution
+                # of the subject's multi type
+                    range_distribution[subject_multi_type][object_multi_type] += 1
+
+            relation_domain_distribution[relation_id] = domain_distribution
+            relation_range_distribution[relation_id] = range_distribution
+
+        return relation_domain_distribution, relation_range_distribution, multitype_index
+
+    @staticmethod
     def generate_from_tensor(input_path: str, debug: bool = False) -> 'KBModelM1':
         """
         Generates an M1 model from the specified tensor file.
@@ -682,52 +771,54 @@ class KBModelM1(KBModel):
         relation_distribution = {relation_id: relation_adjaceny_matrices[relation_id].nnz
                                  for relation_id in range(len(relation_adjaceny_matrices))}
 
-        # the distribution of subject entity types given the relation (object property)
-        # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
-        # every relation
-        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
-        # number of occurrences of that subject's multi type
-        relation_domain_distribution = {}
+        # # the distribution of subject entity types given the relation (object property)
+        # # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
+        # # every relation
+        # # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # # number of occurrences of that subject's multi type
+        # relation_domain_distribution = {}
+        #
+        # # the distribution of object entity types given relation and subject entity type
+        # # the number of times that a multi types occurs in a relation as an object for every relation and for every
+        # # subject's multi type (i.e., the number of occurrences for a specific relation with a specific subject's entity
+        # # type)
+        # # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
+        # relation_range_distribution = {}
+        #
+        # for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
+        #     # create empty inner dictionaries for the current relation
+        #     relation_domain_distribution[relation_id] = {}
+        #     relation_range_distribution[relation_id] = {}
+        #
+        #     # iterate over all non-zero fields of the adjacency matrix
+        #     # iterate over all edges that exist for the current relation
+        #     for index in range(relation_adjaceny_matrices[relation_id].nnz):
+        #         # get subject and object id from the adjacency matrix
+        #         subject_id = relation_adjaceny_matrices[relation_id].row[index]
+        #         object_id = relation_adjaceny_matrices[relation_id].col[index]
+        #         # create multi types from the two sets of entity types for each the subject and the object
+        #         subject_multi_type = MultiType(entity_types[subject_id].indices)
+        #         object_multi_type = MultiType(entity_types[object_id].indices)
+        #
+        #         # if the subject's multi type is not known add it to the relation domain distribution and create an
+        #         # empty relation range distribution for that multi type
+        #         if subject_multi_type not in relation_domain_distribution[relation_id]:
+        #             relation_domain_distribution[relation_id][subject_multi_type] = 0
+        #             relation_range_distribution[relation_id][subject_multi_type] = {}
+        #
+        #         # if the object's multi type is not known add it to the relation range distribution of the subject's
+        #         # multi type
+        #         if object_multi_type not in relation_range_distribution[relation_id][subject_multi_type]:
+        #             relation_range_distribution[relation_id][subject_multi_type][object_multi_type] = 0
+        #
+        #         # increment the number of occurrences of the subject's multi type in the relation domain distribution
+        #         relation_domain_distribution[relation_id][subject_multi_type] += 1
+        #         # increment the number of occurrences of the object's multi type in the relation range distribution
+        #         # of the subject's multi type
+        #         relation_range_distribution[relation_id][subject_multi_type][object_multi_type] += 1
 
-        # the distribution of object entity types given relation and subject entity type
-        # the number of times that a multi types occurs in a relation as an object for every relation and for every
-        # subject's multi type (i.e., the number of occurrences for a specific relation with a specific subject's entity
-        # type)
-        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
-        # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
-        relation_range_distribution = {}
-
-        for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
-            # create empty inner dictionaries for the current relation
-            relation_domain_distribution[relation_id] = {}
-            relation_range_distribution[relation_id] = {}
-
-            # iterate over all non-zero fields of the adjacency matrix
-            # iterate over all edges that exist for the current relation
-            for index in range(relation_adjaceny_matrices[relation_id].nnz):
-                # get subject and object id from the adjacency matrix
-                subject_id = relation_adjaceny_matrices[relation_id].row[index]
-                object_id = relation_adjaceny_matrices[relation_id].col[index]
-                # create multi types from the two sets of entity types for each the subject and the object
-                subject_multi_type = MultiType(entity_types[subject_id].indices)
-                object_multi_type = MultiType(entity_types[object_id].indices)
-
-                # if the subject's multi type is not known add it to the relation domain distribution and create an
-                # empty relation range distribution for that multi type
-                if subject_multi_type not in relation_domain_distribution[relation_id]:
-                    relation_domain_distribution[relation_id][subject_multi_type] = 0
-                    relation_range_distribution[relation_id][subject_multi_type] = {}
-
-                # if the object's multi type is not known add it to the relation range distribution of the subject's
-                # multi type
-                if object_multi_type not in relation_range_distribution[relation_id][subject_multi_type]:
-                    relation_range_distribution[relation_id][subject_multi_type][object_multi_type] = 0
-
-                # increment the number of occurrences of the subject's multi type in the relation domain distribution
-                relation_domain_distribution[relation_id][subject_multi_type] += 1
-                # increment the number of occurrences of the object's multi type in the relation range distribution
-                # of the subject's multi type
-                relation_range_distribution[relation_id][subject_multi_type][object_multi_type] += 1
+        relation_domain_distribution, relation_range_distribution, multi_type_index = KBModelM1.extract_relation_distribution(relation_adjaceny_matrices, entity_types)
 
         naive_model = KBModelM1(
             entity_type_hierarchy=entity_type_hierarchy,
@@ -743,7 +834,8 @@ class KBModelM1(KBModel):
             relation_domain_distribution=relation_domain_distribution,
             relation_range_distribution=relation_range_distribution,
             relation_to_id=relation_to_id,
-            entity_type_to_id=entity_type_to_id
+            entity_type_to_id=entity_type_to_id,
+            multi_type_index=multi_type_index
         )
 
         return naive_model
