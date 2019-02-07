@@ -621,8 +621,6 @@ class KBModelM1(KBModel):
 
     @staticmethod
     def extract_relation_distribution(relation_adjaceny_matrices: List[coo_matrix], entity_types: csr_matrix):
-        print("Building multi type index")
-
         def to_multitype(type_list: List[int]):
             unique_types = sorted(list(set(type_list)))
             return " ".join([str(t) for t in unique_types])
@@ -646,8 +644,6 @@ class KBModelM1(KBModel):
                 add_multitype(subject_multi_type)
                 object_multi_type = to_multitype(entity_types[object_id].indices)
                 add_multitype(object_multi_type)
-
-        print("Learning relations distributions...")
 
         # the distribution of subject entity types given the relation (object property)
         # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
@@ -764,7 +760,7 @@ class KBModelM1(KBModel):
 
             entity_type_distribution[entity_type_set] += 1
 
-        logger.info("Learning relations distributions...")
+        logger.info("Building multi type index and learning relations distributions...")
         # the distribution of facts over relations (object properties)
         # dictionary pointing from the id of an object property (relation) to the number of edges that exist for that
         # relation
