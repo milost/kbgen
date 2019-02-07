@@ -621,7 +621,7 @@ class KBModelM1(KBModel):
 
     @staticmethod
     def extract_relation_distribution(relation_adjaceny_matrices: List[coo_matrix], entity_types: csr_matrix):
-        def to_multitype(type_list: List[int]):
+        def to_multitype(type_list: List[int]) -> str:
             unique_types = sorted(list(set(type_list)))
             return " ".join([str(t) for t in unique_types])
 
@@ -632,6 +632,14 @@ class KBModelM1(KBModel):
                 multitype_index[multitype] = len(multitype_index)
             return multitype_index[multitype]
 
+        dense_entity_types = entity_types.toarray()
+
+        def add_multitypefrom_id(entity_id: int):
+            # get list of nonzero fields in the row of the entity id
+            # a tuple with only one element is returned
+            type_ids, = dense_entity_types[entity_id].nonzero()
+            add_multitype(to_multitype(type_ids))
+
         for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
             subject_ids_row = relation_adjaceny_matrices[relation_id].row
             object_ids_row = relation_adjaceny_matrices[relation_id].col
@@ -640,10 +648,8 @@ class KBModelM1(KBModel):
                 subject_id = subject_ids_row[index]
                 object_id = object_ids_row[index]
                 # create multi types from the two sets of entity types for each the subject and the object
-                subject_multi_type = to_multitype(entity_types[subject_id].indices)
-                add_multitype(subject_multi_type)
-                object_multi_type = to_multitype(entity_types[object_id].indices)
-                add_multitype(object_multi_type)
+                add_multitypefrom_id(subject_id)
+                add_multitypefrom_id(object_id)
 
         # the distribution of subject entity types given the relation (object property)
         # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
@@ -675,8 +681,12 @@ class KBModelM1(KBModel):
                 subject_id = subject_ids_row[index]
                 object_id = object_ids_row[index]
                 # create multi types from the two sets of entity types for each the subject and the object
-                subject_multi_type = multitype_index[to_multitype(entity_types[subject_id].indices)]
-                object_multi_type = multitype_index[to_multitype(entity_types[object_id].indices)]
+
+                subject_multi_type, = dense_entity_types[subject_id].nonzero()
+                subject_multi_type = multitype_index[to_multitype(subject_multi_type)]
+
+                object_multi_type, = dense_entity_types[object_id].nonzero()
+                object_multi_type = multitype_index[to_multitype(object_multi_type)]
 
                 # if the subject's multi type is not known add it to the relation domain distribution and create an
                 # empty relation range distribution for that multi type
