@@ -8,7 +8,7 @@ from kbgen.rules import RuleSet
 
 def cli_args() -> Namespace:
     parser = ArgumentParser()
-    parser.add_argument("input", type=str, default=None, help="path to the tensor npz file")
+    parser.add_argument("input", type=str, default=None, help="path to the directory containing npy and npz files")
     parser.add_argument("-m", "--model", type=str, default="M1",
                         help="choice of model [M1, M2, M2, e] (e requires -sm)")
     parser.add_argument("-sm", "--source-kb-models", type=str, nargs="+", default=["M1", "M2", "M3"],
@@ -36,7 +36,7 @@ def build_m2_model(tensor_files_dir: str, output_name: str) -> Tuple[KBModelM2, 
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M2 model and the output file name
     """
-    m1_model_path = f"{output_name}-M1.pkl"
+    m1_model_path = f"{output_name}/{output_name}-M1.pkl"
     m1_model = pickle.load(open(m1_model_path, "rb"))
     assert isinstance(m1_model, KBModelM1)
 
@@ -52,7 +52,7 @@ def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M3 model and the output file name
     """
-    m2_model_path = f"{output_name}-M2.pkl"
+    m2_model_path = f"{output_name}/{output_name}-M2.pkl"
     m2_model = pickle.load(open(m2_model_path, "rb"))
     assert isinstance(m2_model, KBModelM2)
 
@@ -72,7 +72,7 @@ def build_m4_model(output_name: str) -> Tuple[KBModelM2, str]:
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M4 model and the output file name
     """
-    m3_model_path = f"{output_name}-M3.pkl"
+    m3_model_path = f"{output_name}/{output_name}-M3.pkl"
     m3_model = pickle.load(open(m3_model_path, "rb"))
     assert isinstance(m3_model, KBModelM3)
 
@@ -145,8 +145,9 @@ def main():
 
     if models and models_output:
         for model, model_output in zip(models, models_output):
-            print(f"Saving model to {model_output}...")
-            pickle.dump(model, open(model_output, "wb"))
+            output_file = f"{args.input}/{model_output}"
+            print(f"Saving model to {output_file}...")
+            pickle.dump(model, open(output_file, "wb"))
 
 
 if __name__ == '__main__':

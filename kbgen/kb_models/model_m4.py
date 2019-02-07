@@ -1,11 +1,11 @@
 import random
 from typing import Dict
 
-from rdflib import Graph
+from rdflib import Graph, URIRef
 
 from .model_m3 import KBModelM3
 from ..rules import Rule
-from ..util_models import URIRelation, Oracle
+from ..util_models import URIRelation, Oracle, URIType
 
 
 class KBModelM4(KBModelM3):
@@ -67,5 +67,43 @@ class KBModelM4(KBModelM3):
         self.logger.info("Breaking rules...")
         for rule in self.rules.rules:
             self.break_rule(graph, rule)
-        self.oracle = Oracle(self.facts_to_correctness, self.rules_to_correctness_ratio)
+        self.create_oracle()
         return graph
+
+    def create_oracle(self):
+        """
+        Create the oracle after renaming the URIs in the changed facts to the proper names.
+        """
+        relation_id_to_uri: Dict[int, URIRef] = {relation_id: relation_uri
+                                                 for relation_uri, relation_id in self.relation_to_id.items()}
+        entity_type_id_to_uri: Dict[int, URIRef] = {type_id: type_uri
+                                                    for type_uri, type_id in self.entity_type_to_id.items()}
+
+        def replace_name(rdf_entity: URIRef) -> URIRef:
+            """
+            Replace the name of URIRelations and URITypes while keeping the names of URIEntities.
+            :param rdf_entity: the synthesized URI that is resolved to its original name
+            :return: the resolved URI if the original URI was an URIRelation or an URIType, otherwise the synthesized URI
+            """
+            name = rdf_entity
+
+            if str(rdf_entity).startswith(URIRelation.prefix):
+                name = relation_id_to_uri[URIRelation.extract_id(rdf_entity).id]
+            elif str(rdf_entity).startswith(URIType.prefix):
+                name = entity_type_id_to_uri[URIType.extract_id(rdf_entity).id]
+
+            return URIRef(name)
+
+        named_facts_to_correctness: Dict[Rule, Dict[tuple, bool]] = {}
+        for rule, facts in self.facts_to_correctness.items():
+            correctness_dict = {}
+            for fact, correctness in facts.items():
+                subject_uri, predicate_uri, object_uri = fact
+                subject_with_name = replace_name(subject_uri)
+                relation_with_name = replace_name(predicate_uri)
+                object_with_name = replace_name(object_uri)
+                named_fact = (subject_with_name, relation_with_name, object_with_name)
+                correctness_dict[named_fact] = correctness
+            named_facts_to_correctness[rule] = correctness_dict
+
+        self.oracle = Oracle(named_facts_to_correctness, self.rules_to_correctness_ratio)

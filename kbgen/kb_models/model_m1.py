@@ -626,7 +626,7 @@ class KBModelM1(KBModel):
         if debug:
             logger = create_logger(logging.DEBUG)
         else:
-            logger = create_logger(logging.INFO, log_to_console=True)
+            logger = create_logger(logging.INFO)
 
         logger.info("Loading data...")
 
@@ -697,7 +697,7 @@ class KBModelM1(KBModel):
         # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
         relation_range_distribution = {}
 
-        for relation_id in range(len(relation_adjaceny_matrices)):
+        for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
             # create empty inner dictionaries for the current relation
             relation_domain_distribution[relation_id] = {}
             relation_range_distribution[relation_id] = {}

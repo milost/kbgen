@@ -36,7 +36,7 @@ def replace_id_with_name(graph: Graph, model: KBModelM1) -> Graph:
                                              for relation_uri, relation_id in model.relation_to_id.items()}
 
     entity_type_id_to_uri: Dict[int, URIRef] = {type_id: type_uri
-                                                for type_uri, type_id in  model.entity_type_to_id.items()}
+                                                for type_uri, type_id in model.entity_type_to_id.items()}
 
     def replace_name(rdf_entity: URIRef) -> URIRef:
         """
@@ -71,18 +71,20 @@ def main():
 
     # synthesize graph using the model
     graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
+    print()
 
+    print("Replacing ids with uris...")
     # replace the numbered rdf relations with the proper names from the original knowledge base
     graph = replace_id_with_name(graph, model)
 
     if isinstance(model, KBModelM4):
+        print("Saving oracle...")
         with open(f"{args.output}-oracle.json", "w") as oracle_file:
             model.oracle.to_json(oracle_file)
-        with open(f"{args.output}-oracle.bin", "wb") as oracle_file:
-            pickle.dump(model.oracle, oracle_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     formats = ["n3", "ttl"]
 
+    print("Saving synthesized graph...")
     # serialize the generated graph and write it to a .tsv file
     for rdf_format in formats:
         graph.serialize(f"{args.output}.{rdf_format}", format=rdf_format)
