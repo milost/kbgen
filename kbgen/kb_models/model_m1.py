@@ -5,7 +5,7 @@ import numpy as np
 
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
-from typing import Dict, Tuple, List, Iterable, Optional
+from typing import Dict, Tuple, List, Iterable, Optional, Union
 from scipy.sparse import csr_matrix, coo_matrix
 
 from ..load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, \
@@ -37,7 +37,7 @@ class KBModelM1(KBModel):
                  relation_range_distribution: Dict[int, Dict[MultiType, Dict[MultiType, int]]],
                  relation_to_id: Dict[URIRef, int],
                  entity_type_to_id: Dict[URIRef, int] = None,
-                 multi_type_index: Dict[str, int] = None):
+                 multi_type_index: Dict[frozenset, int] = None):
         """
         Creates an M1 model with the passed data.
         :param entity_type_hierarchy: dictionary pointing from an entity type's id to its DAGNode in the hierarchy of
@@ -621,35 +621,27 @@ class KBModelM1(KBModel):
 
     @staticmethod
     def extract_relation_distribution(relation_adjaceny_matrices: List[coo_matrix], entity_types: csr_matrix):
-        def to_multitype(type_list: List[int]) -> str:
-            unique_types = sorted(list(set(type_list)))
-            return " ".join([str(t) for t in unique_types])
+        multitype_index: Dict[frozenset, int] = {}
 
-        multitype_index: Dict[str, int] = {}
-
-        def add_multitype(multitype: str) -> int:
+        def add_multitype(type_list: Union[List[int], np.ndarray]) -> int:
+            multitype = frozenset(type_list)
             if multitype not in multitype_index:
                 multitype_index[multitype] = len(multitype_index)
             return multitype_index[multitype]
 
         dense_entity_types = entity_types.toarray()
 
-        def add_multitypefrom_id(entity_id: int):
-            # get list of nonzero fields in the row of the entity id
-            # a tuple with only one element is returned
-            type_ids, = dense_entity_types[entity_id].nonzero()
-            add_multitype(to_multitype(type_ids))
-
         for relation_id in tqdm.tqdm(range(len(relation_adjaceny_matrices))):
             subject_ids_row = relation_adjaceny_matrices[relation_id].row
             object_ids_row = relation_adjaceny_matrices[relation_id].col
             for index in range(relation_adjaceny_matrices[relation_id].nnz):
-                # get subject and object id from the adjacency matrix
+                # get subject and object id from the adjacency matrix and add their multitypes to the index
                 subject_id = subject_ids_row[index]
                 object_id = object_ids_row[index]
-                # create multi types from the two sets of entity types for each the subject and the object
-                add_multitypefrom_id(subject_id)
-                add_multitypefrom_id(object_id)
+                multitype, = dense_entity_types[subject_id].nonzero()
+                add_multitype(multitype)
+                multitype, = dense_entity_types[object_id].nonzero()
+                add_multitype(multitype)
 
         # the distribution of subject entity types given the relation (object property)
         # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
@@ -683,10 +675,10 @@ class KBModelM1(KBModel):
                 # create multi types from the two sets of entity types for each the subject and the object
 
                 subject_multi_type, = dense_entity_types[subject_id].nonzero()
-                subject_multi_type = multitype_index[to_multitype(subject_multi_type)]
+                subject_multi_type = multitype_index[frozenset(subject_multi_type)]
 
                 object_multi_type, = dense_entity_types[object_id].nonzero()
-                object_multi_type = multitype_index[to_multitype(object_multi_type)]
+                object_multi_type = multitype_index[frozenset(object_multi_type)]
 
                 # if the subject's multi type is not known add it to the relation domain distribution and create an
                 # empty relation range distribution for that multi type
