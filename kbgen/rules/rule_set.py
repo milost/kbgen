@@ -1,7 +1,9 @@
+import json
 from typing import Dict, List
 
 from rdflib import URIRef
 
+from .rudik_rule import RudikRule
 from .rule import Rule
 
 
@@ -45,5 +47,12 @@ class RuleSet(object):
                     rule = Rule.parse_amie(line, relation_to_id)
                     if rule is not None:
                         rules.append(rule)
+        print(f"Rules successfully parsed: {len(rules)}...")
+        return cls(rules)
+
+    @classmethod
+    def parse_rudik(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
+        parsed_file = json.load(open(rules_path, "r", encoding="utf-8"))
+        rules = [RudikRule.parse_rudik(rule_dict, relation_to_id) for rule_dict in parsed_file]
         print(f"Rules successfully parsed: {len(rules)}...")
         return cls(rules)

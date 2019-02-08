@@ -111,3 +111,35 @@ class Literal(object):
 
         return Literal(relation_id, literal_subject_id, literal_object_id, relation_to_id)
 
+    @staticmethod
+    def parse_rudik(literal_triple: Dict[str, str],
+                    relation_to_id: Dict[URIRef, int],
+                    graph_iri: str) -> Optional['Literal']:
+        relation_str = literal_triple["predicate"]
+        # TODO: handle the predicate if it's a simple comparison (e.g., <, >, <=, >=)
+        # if graph_iri not in relation_str:
+        #     return None
+
+        relation = URIRef(literal_triple["predicate"])
+        relation_id = relation_to_id[relation]
+
+        identifier_to_id = {"subject": 0, "object": 1}
+        subject_str = literal_triple["subject"]
+        if graph_iri in subject_str:
+            # TODO: handle literal subject (i.e., dbpedia uri)
+            return None
+        if subject_str in identifier_to_id:
+            subject_id = identifier_to_id[subject_str]
+        else:
+            subject_id = int(subject_str[1:]) + 2
+
+        object_str = literal_triple["object"]
+        if graph_iri in object_str:
+            # TODO: handle literal object (i.e., dbpedia uri)
+            return None
+        if object_str in identifier_to_id:
+            object_id = identifier_to_id[object_str]
+        else:
+            object_id = int(object_str[1:]) + 2
+
+        return Literal(relation_id, subject_id, object_id, relation_to_id)
