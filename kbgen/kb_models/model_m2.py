@@ -1,3 +1,5 @@
+from multiprocessing import Queue, Process
+from queue import Empty
 from typing import Dict, Tuple, List
 
 from tqdm import tqdm
@@ -5,7 +7,7 @@ from tqdm import tqdm
 from ..load_tensor_tools import load_graph_npz
 from .model_m1 import KBModelM1
 from rdflib import Graph
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, coo_matrix
 
 
 class KBModelM2(KBModelM1):
@@ -201,6 +203,102 @@ class KBModelM2(KBModelM1):
         return KBModelM2.generate_from_tensor_and_model(m1_model, input_path, debug)
 
     @staticmethod
+    def generate_from_tensor_and_model_multiprocess(naive_model: KBModelM1,
+                                                    input_path: str,
+                                                    debug: bool = False) -> 'KBModelM2':
+        """
+        Generates an M2 model from the specified tensor file and M1 model.
+        :param naive_model: the previously generated M1 model
+        :param input_path: path to the numpy tensor file
+        :param debug: boolean indicating if the logging level is on debug
+        :return: an M2 model generated from the tensor file and M1 model
+        """
+        # the list of adjacency matrices of the object property relations created in load_tensor
+        relation_adjaceny_matrices = load_graph_npz(input_path)
+
+        # dictionary pointing from a relation id to the functionality score
+        # this functionality score is the average number of outgoing edges an entity has of this relation type given
+        # that it has any outgoing edges of this relation type
+        functionalities = {}
+
+        # dictionary pointing from a relation id to the inverse functionality score
+        # this inverse functionality score is the average number of incoming edges an entity has of this relation type
+        # given that it has any incoming edges of this relation type
+        inverse_functionalities = {}
+
+        # dictionary pointing from a relation id to a boolean indicating if this relation has any reflexive edges
+        relation_id_to_reflexiveness = {}
+
+        # dictionary pointing from a relation id to its density
+        # the density says how clustered the edges are around specific nodes
+        # the lowest possible density is sqrt(num_edges_of_relation_type) and it means that every edge is between
+        # a different subject and object than the other edges, i.e. an entity can appear only once as subject and once
+        # as object for this relation type
+        # the highest possible density is 1.0 and it means that the edges of this relation type have the minimum amount
+        # of entities as subjects and objects needed to have that many edges (e.g., we have 1000 relations they start
+        # at 1 entity (subject) and go to 1000 other entities (objects)
+        relation_id_to_density = {}
+
+        # dictionary pointing from relation id to a count of how many different subjects appear with this relation
+        relation_id_to_distinct_subjects = {}
+
+        # dictionary pointing from relation id to a count of how many different objects appear with this relation
+        relation_id_to_distinct_objects = {}
+
+        print(f"Learning advanced relation distributions...")
+        task_queue = Queue()
+        result_queue = Queue()
+        num_relations = len(relation_adjaceny_matrices)
+        num_processes = 2
+        processes = []
+
+        print(f"Creating {num_processes} worker processes")
+        for _ in range(num_processes):
+            process = LearnProcess(matrices=relation_adjaceny_matrices,
+                                   task_queue=task_queue,
+                                   result_queue=result_queue)
+            processes.append(process)
+
+        print(f"Filling task queue with {num_relations} tasks")
+        for relation_id in range(num_relations):
+            task_queue.put(relation_id)
+
+        for process in processes:
+            process.start()
+
+        # parse the results added to the result queue
+        progress_bar = tqdm(total=num_relations)
+        finished = 0
+        while True:
+            result = result_queue.get(block=True)
+            relation_id = result["relation_id"]
+            relation_id_to_distinct_subjects[relation_id] = result["num_distinct_subjects"]
+            relation_id_to_distinct_objects[relation_id] = result["num_distinct_objects"]
+            relation_id_to_density[relation_id] = result["density"]
+            functionalities[relation_id] = result["functionality"]
+            inverse_functionalities[relation_id] = result["inverse_functionality"]
+            relation_id_to_reflexiveness[relation_id] = result["reflexiveness"]
+            progress_bar.update(1)
+            finished += 1
+            if finished == num_relations:
+                break
+
+        # kill processes when we are done
+        for process in processes:
+            process.terminate()
+
+        owl_model = KBModelM2(
+            m1_model=naive_model,
+            functionalities=functionalities,
+            inverse_functionalities=inverse_functionalities,
+            relation_id_to_density=relation_id_to_density,
+            relation_id_to_distinct_subjects=relation_id_to_distinct_subjects,
+            relation_id_to_distinct_objects=relation_id_to_distinct_objects,
+            relation_id_to_reflexiveness=relation_id_to_reflexiveness)
+
+        return owl_model
+
+    @staticmethod
     def generate_from_tensor_and_model(naive_model: KBModelM1, input_path: str, debug: bool = False) -> 'KBModelM2':
         """
         Generates an M2 model from the specified tensor file and M1 model.
@@ -289,3 +387,65 @@ class KBModelM2(KBModelM1):
             relation_id_to_reflexiveness=relation_id_to_reflexiveness)
 
         return owl_model
+
+
+class LearnProcess(Process):
+    def __init__(self, matrices: List[coo_matrix], task_queue: Queue, result_queue: Queue):
+        super(LearnProcess, self).__init__()
+        self.matrices = matrices
+        self.task_queue = task_queue
+        self.result_queue = result_queue
+
+    def run(self):
+        while True:
+            try:
+                relation_id = self.task_queue.get()
+                self.learn_distributions(relation_id)
+            except Empty:
+                break
+
+    def learn_distributions(self, relation_id: int):
+        """
+        Learn the funtionality, inverse functionality, reflexiveness, density and number of distinct subjects and
+        objects for the current relation from the relation's adjacency matrix.
+        The index of each matrix is the id of the relation type.
+        The rows of each matrix contain the ids of the subject of the relation.
+        The columns of each matrix contain the ids of the object of the relation.
+
+        The result is added to the result queue.
+        :param relation_id: the relation id for which the features are learned
+        """
+        adjacency_matrix = self.matrices[relation_id]
+        result = {"relation_id": relation_id}
+
+        # how often an entity id appears as subject in a relation
+        # axis = 1 sums the row values
+        subject_frequencies = csr_matrix(adjacency_matrix.sum(axis=1))
+
+        # how often an entity id appears as object in a relation
+        # axis = 0 sums the column values
+        object_frequencies = csr_matrix(adjacency_matrix.sum(axis=0))
+
+        # the number of different (distinct) entities that appear as subject/object
+        num_distinct_subjects = subject_frequencies.nnz
+        num_distinct_objects = object_frequencies.nnz
+        result["num_distinct_subjects"] = num_distinct_subjects
+        result["num_distinct_objects"] = num_distinct_objects
+
+        # the number of edges of this relation type divided by the product of the number of distinct entities
+        # that are subjects and the number of distinct entities that are objects of this relation
+        density_score = float(adjacency_matrix.nnz) / (num_distinct_subjects * num_distinct_objects)
+        result["density"] = density_score
+
+        # the average number of outgoing edges an entity has of this relation type given that it has any outgoing
+        # edges of this relation type
+        result["functionality"] = float(subject_frequencies.sum()) / num_distinct_subjects
+
+        # the average number of incoming edges an entity has of this relation type given that it has any incoming
+        # edges of this relation type
+        result["inverse_functionality"] = float(object_frequencies.sum()) / num_distinct_objects
+
+        # True if any reflexive edge exists in the adjacency matrix
+        result["reflexiveness"] = adjacency_matrix.diagonal().any()
+
+        self.result_queue.put(result)
