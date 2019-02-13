@@ -126,6 +126,11 @@ class Rule(object):
 
         return patterns, matched_literal
 
+    def to_dict(self):
+        return {
+            "pattern": self.full_query_pattern()
+        }
+
     def produce(self,
                 graph: Graph,
                 subject_uri: URIRef,

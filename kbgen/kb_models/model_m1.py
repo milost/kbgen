@@ -1,11 +1,10 @@
 import tqdm
 import datetime
 import logging
-import numpy as np
 
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
-from typing import Dict, Tuple, List, Iterable, Optional, Union
+from typing import Dict, Tuple, List, Iterable, Optional
 from scipy.sparse import csr_matrix, coo_matrix
 
 from ..load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, \

@@ -120,10 +120,12 @@ class Literal(object):
         # if graph_iri not in relation_str:
         #     return None
 
-        relation = URIRef(literal_triple["predicate"])
+        relation = URIRef(relation_str)
         relation_id = relation_to_id[relation]
 
-        identifier_to_id = {"subject": 0, "object": 1}
+        identifier_to_id = {"subject": 1, "object": 2}
+        # the v parameters start with v0 while the resulting id of v0 should be 3 (= 0 + 3)
+        v_parameter_offset = 3
         subject_str = literal_triple["subject"]
         if graph_iri in subject_str:
             # TODO: handle literal subject (i.e., dbpedia uri)
@@ -131,7 +133,7 @@ class Literal(object):
         if subject_str in identifier_to_id:
             subject_id = identifier_to_id[subject_str]
         else:
-            subject_id = int(subject_str[1:]) + 2
+            subject_id = int(subject_str[1:]) + v_parameter_offset
 
         object_str = literal_triple["object"]
         if graph_iri in object_str:
@@ -140,6 +142,6 @@ class Literal(object):
         if object_str in identifier_to_id:
             object_id = identifier_to_id[object_str]
         else:
-            object_id = int(object_str[1:]) + 2
+            object_id = int(object_str[1:]) + v_parameter_offset
 
         return Literal(relation_id, subject_id, object_id, relation_to_id)

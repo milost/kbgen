@@ -1,4 +1,3 @@
-import json
 from typing import Dict, List
 
 from rdflib import URIRef
@@ -14,12 +13,23 @@ class RudikRule(Rule):
                  rudik_premise: List[Dict[str, str]] = None,
                  rudik_conclusion: Dict[str, str] = None,
                  hashcode: int = None,
-                 rule_type: bool = None):
+                 rule_type: bool = None,
+                 graph_iri: str = None):
         super(RudikRule, self).__init__(premise, conclusion)
         self.rudik_premise = rudik_premise
         self.rudik_conclusion = rudik_conclusion
         self.hashcode = hashcode
         self.rule_type = rule_type
+        self.graph_iri = graph_iri
+
+    def to_dict(self):
+        return {
+            "graph_iri": self.graph_iri,
+            "rule_type": self.rule_type,
+            "hashcode": self.hashcode,
+            "premise_triples": self.rudik_premise,
+            "conclusion_triple": self.rudik_conclusion
+        }
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict, relation_to_id: Dict[URIRef, int]) -> 'RudikRule':
@@ -37,4 +47,5 @@ class RudikRule(Rule):
                    rudik_premise=rudik_premise,
                    rudik_conclusion=rudik_conclusion,
                    hashcode=hashcode,
-                   rule_type=rule_type)
+                   rule_type=rule_type,
+                   graph_iri=graph_iri)

@@ -1,7 +1,7 @@
 import json
 from typing import Dict, TextIO, Optional
 
-from ..rules import Rule
+from ..rules import Rule, RudikRule
 
 
 class Oracle(object):
@@ -29,12 +29,19 @@ class Oracle(object):
             }
         facts_to_correctness = self.facts_to_correctness[rule]
         return {
+            "rule": rule.to_dict(),
             "facts": [fact_to_json(fact, correctness) for fact, correctness in facts_to_correctness.items()],
             "ratio": self.rules_to_correctness_ratio[rule]
         }
 
     def to_json(self, file: TextIO=None) -> Optional[str]:
-        data_dict = {str(rule): self.serialize_rule(rule) for rule in self.facts_to_correctness}
+        data_dict = {}
+        for rule in self.facts_to_correctness:
+            if isinstance(rule, RudikRule):
+                data_dict[rule.hashcode] = self.serialize_rule(rule)
+            else:
+                data_dict[str(rule)] = self.serialize_rule(rule)
+
         if file:
             json.dump(data_dict, file)
         else:

@@ -14,6 +14,7 @@ def cli_args() -> Namespace:
     parser.add_argument("-sm", "--source-kb-models", type=str, nargs="+", default=["M1", "M2", "M3"],
                         help="source model with entity selection bias [M1, M2, M3]")
     parser.add_argument("-r", "--rules-path", type=str, default=None, help="path to txt file with Amie horn rules")
+    parser.add_argument("--rudik",  dest='rudik', action='store_true', help="set if the rules are rudik rules")
     return parser.parse_args()
 
 
@@ -44,12 +45,13 @@ def build_m2_model(tensor_files_dir: str, output_name: str) -> Tuple[KBModelM2, 
     return model, f"{output_name}-M2.pkl"
 
 
-def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
+def build_m3_model(rule_file: str, output_name: str, parse_rudik: bool) -> Tuple[KBModelM3, str]:
     """
     Build an M3 model from a previously built and serialized M2 model and AMIE rules. The M2 model must have been
     serialized with the same output_name passed to this method.
     :param rule_file: path to the file containing the AMIE rules
     :param output_name: name that is used for the output file name
+    :param parse_rudik: if True the rules to parse are rudik rules
     :return: tuple of the generated M3 model and the output file name
     """
     m2_model_path = f"{output_name}/{output_name}-M2.pkl"
@@ -59,7 +61,10 @@ def build_m3_model(rule_file: str, output_name: str) -> Tuple[KBModelM3, str]:
     assert isinstance(m2_model, KBModelM2)
     # dictionary pointing from the relations (entities) to their ids
     relation_to_id = m2_model.relation_to_id
-    rules = RuleSet.parse_amie(rule_file, relation_to_id)
+    if parse_rudik:
+        rules = RuleSet.parse_rudik(rule_file, relation_to_id)
+    else:
+        rules = RuleSet.parse_amie(rule_file, relation_to_id)
 
     model = KBModelM3(m2_model, rules)
     return model, f"{output_name}-M3.pkl"
@@ -129,7 +134,7 @@ def main():
         models_output.append(output_name)
 
     if args.model == "M3":
-        model, output_name = build_m3_model(args.rules_path, base)
+        model, output_name = build_m3_model(args.rules_path, base, args.rudik)
         models.append(model)
         models_output.append(output_name)
 
