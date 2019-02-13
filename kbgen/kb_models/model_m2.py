@@ -1,5 +1,7 @@
 from typing import Dict, Tuple, List
 
+from tqdm import tqdm
+
 from ..load_tensor_tools import load_graph_npz
 from .model_m1 import KBModelM1
 from rdflib import Graph
@@ -243,7 +245,10 @@ class KBModelM2(KBModelM1):
         # the index of each matrix is the id of the relation type
         # the rows of each matrix contain the ids of the subject of the relation
         # the columns of each matrix contain the ids of the object of the relation
-        for relation_id, adjacency_matrix in enumerate(relation_adjaceny_matrices):
+        print(f"Learning advances relation distributions...")
+        for relation_id in tqdm(range(len(relation_adjaceny_matrices))):
+            adjacency_matrix = relation_adjaceny_matrices[relation_id]
+
             # how often an entity id appears as subject in a relation
             # axis = 1 sums the row values
             subject_frequencies = csr_matrix(adjacency_matrix.sum(axis=1))
