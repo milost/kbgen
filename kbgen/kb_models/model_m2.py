@@ -4,7 +4,7 @@ from typing import Dict, Tuple, List
 
 from tqdm import tqdm
 
-from ..load_tensor_tools import load_graph_npz
+from ..load_tensor_tools import load_graph_npz, load_single_adjacency_matrix, num_adjacency_matrices
 from .model_m1 import KBModelM1
 from rdflib import Graph
 from scipy.sparse import csr_matrix, coo_matrix
@@ -205,16 +205,18 @@ class KBModelM2(KBModelM1):
     @staticmethod
     def generate_from_tensor_and_model_multiprocess(naive_model: KBModelM1,
                                                     input_path: str,
+                                                    num_processes: int,
                                                     debug: bool = False) -> 'KBModelM2':
         """
         Generates an M2 model from the specified tensor file and M1 model.
         :param naive_model: the previously generated M1 model
         :param input_path: path to the numpy tensor file
+        :param num_processes: the number of processes that are used
         :param debug: boolean indicating if the logging level is on debug
         :return: an M2 model generated from the tensor file and M1 model
         """
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = load_graph_npz(input_path)
+        # relation_adjaceny_matrices = load_graph_npz(input_path)
 
         # dictionary pointing from a relation id to the functionality score
         # this functionality score is the average number of outgoing edges an entity has of this relation type given
@@ -248,15 +250,12 @@ class KBModelM2(KBModelM1):
         print(f"Learning advanced relation distributions...")
         task_queue = Queue()
         result_queue = Queue()
-        num_relations = len(relation_adjaceny_matrices)
-        num_processes = 2
+        num_relations = num_adjacency_matrices(input_path)
         processes = []
 
         print(f"Creating {num_processes} worker processes")
         for _ in range(num_processes):
-            process = LearnProcess(matrices=relation_adjaceny_matrices,
-                                   task_queue=task_queue,
-                                   result_queue=result_queue)
+            process = LearnProcess(input_dir=input_path, task_queue=task_queue, result_queue=result_queue)
             processes.append(process)
 
         print(f"Filling task queue with {num_relations} tasks")
@@ -390,9 +389,9 @@ class KBModelM2(KBModelM1):
 
 
 class LearnProcess(Process):
-    def __init__(self, matrices: List[coo_matrix], task_queue: Queue, result_queue: Queue):
+    def __init__(self, input_dir: str, task_queue: Queue, result_queue: Queue):
         super(LearnProcess, self).__init__()
-        self.matrices = matrices
+        self.input_dir = input_dir
         self.task_queue = task_queue
         self.result_queue = result_queue
 
@@ -415,7 +414,7 @@ class LearnProcess(Process):
         The result is added to the result queue.
         :param relation_id: the relation id for which the features are learned
         """
-        adjacency_matrix = self.matrices[relation_id]
+        adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
         result = {"relation_id": relation_id}
 
         # how often an entity id appears as subject in a relation

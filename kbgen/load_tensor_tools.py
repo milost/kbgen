@@ -177,6 +177,18 @@ def load_graph_npz(input_dir: str) -> List[coo_matrix]:
     return loaded_matrices
 
 
+def load_single_adjacency_matrix(input_dir: str, relation_id: int) -> coo_matrix:
+    directory = graph_npz_dir(input_dir)
+    file = f"{directory}/{relation_id}.npz"
+    return load_npz(file)
+
+
+def num_adjacency_matrices(input_dir: str) -> int:
+    directory = graph_npz_dir(input_dir)
+    directory = Path(directory)
+    return len(list(directory.glob("./*npz")))
+
+
 def save_graph_npz(input_dir: str, property_adjaceny_matrices: List[coo_matrix]):
     directory = graph_npz_dir(input_dir)
     Path(directory).mkdir(exist_ok=True)
