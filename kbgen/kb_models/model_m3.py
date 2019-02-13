@@ -592,6 +592,35 @@ class KBModelM3(KBModelM2):
 
         return relation_id_to_range_entity_id_pool
 
+    def add_saturated_entity(self, relation_id: int, entity_id: int, other_entity_type: MultiType, is_subject_id: bool):
+        """
+        Adds an entity to the pool of saturated entities for a given entity type of the other end of the fact (i.e.,
+        a pool of subject ids for each object entity type and a pool of object ids for a pool of subject entity types).
+        :param relation_id: the current relation
+        :param entity_id: the id of the entity (either subject or object)
+        :param other_entity_type: the entity type of the other entity (if the entity_id refers to a subject this type
+                                  refers to the object type and vice versa)
+        :param is_subject_id: if True the entity_id refers to a subject, if False to an object
+        """
+        if is_subject_id:
+            # it's impossible to add facts for relation_id with given subject "subject_id"
+            # add the impossible object type to the collection of saturated subject ids
+            if other_entity_type not in self.saturated_subject_ids[relation_id]:
+                self.saturated_subject_ids[relation_id][other_entity_type] = set()
+
+            # the current subject can't be added with the current relation and the selected
+            # object type
+            self.saturated_subject_ids[relation_id][other_entity_type].add(entity_id)
+        else:
+            # it's impossible to add facts for relation_id with given object "object_id"
+            # add the impossible subject type to the collection of saturated object ids
+            if other_entity_type not in self.saturated_object_ids[relation_id]:
+                self.saturated_object_ids[relation_id][other_entity_type] = set()
+
+            # the current object can't be added with the current relation and the selected
+            # subject type
+            self.saturated_object_ids[relation_id][other_entity_type].add(entity_id)
+
     def synthesize(self,
                    size: float = 1.0,
                    number_of_entities: int = None,
@@ -613,6 +642,23 @@ class KBModelM3(KBModelM2):
         :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
         :return: the synthesized graph as rdf graph object
         """
+
+        def get_next_entity(index: int, offset: int, possible_entites: Set[int]) -> Tuple[URIRef, int]:
+            """
+            Get the next entity from a list of possible entites. This is used to try out multiple possible entities
+            (i.e., instances) when adding a new fact.
+            :param index: the selected index for the entity (this is currently a random index)
+            :param offset: the current offset in the list of possible entities
+            :param possible_entites: the number of possible entity instances to choose from
+            :return: the uri of the next selected entity as well as the new offset
+            """
+            offset += 1
+            new_index = index + offset
+            new_index = new_index % len(possible_entites)
+            entity_id = list(possible_entites)[new_index]
+            uri = URIEntity(entity_id).uri
+            return uri, offset
+
         print("Synthesizing HORN model")
 
         level = logging.DEBUG if debug else logging.INFO
@@ -833,22 +879,19 @@ class KBModelM3(KBModelM2):
                                     and object_offset < len(possible_object_entities)
                                 ):
                                     # try adding the fact with the next possible object
-                                    object_offset += 1
-                                    new_object_index = selected_object_index + object_offset
-                                    new_object_index = new_object_index % len(possible_object_entities)
-                                    object_id = list(possible_object_entities)[new_object_index]
-                                    object_uri = URIEntity(object_id).uri
+                                    object_uri, object_offset = get_next_entity(selected_object_index,
+                                                                                object_offset,
+                                                                                possible_object_entities)
 
                                 # the fact could not be added
                                 if object_offset >= len(possible_object_entities):
-                                    # it's impossible to add facts for relation_id with given subject "subject_id"
-                                    # add the impossible object type to the collection of saturated subject ids
-                                    if selected_object_type not in self.saturated_subject_ids[relation_id]:
-                                        self.saturated_subject_ids[relation_id][selected_object_type] = set()
-
-                                    # the current subject can't be added with the current relation and the selected
-                                    # object type
-                                    self.saturated_subject_ids[relation_id][selected_object_type].add(subject_id)
+                                    # it's impossible to add facts for relation_id with given object "subject_id"
+                                    # to the select object type (therefore the subject_id is saturated for the object
+                                    # type in this relation)
+                                    self.add_saturated_entity(relation_id,
+                                                              subject_id,
+                                                              selected_object_type,
+                                                              is_subject_id=True)
                             else:
                                 # this line should be unnecessary
                                 object_id = list(possible_object_entities)[selected_object_index]
@@ -860,22 +903,19 @@ class KBModelM3(KBModelM2):
                                     and subject_offset < len(possible_subject_entities)
                                 ):
                                     # try adding fact with the next possible subjects
-                                    subject_offset += 1
-                                    new_subect_index = selected_subject_index + subject_offset
-                                    new_subect_index = new_subect_index % len(possible_subject_entities)
-                                    subject_id = list(possible_subject_entities)[new_subect_index]
-                                    subject_uri = URIEntity(subject_id).uri
+                                    subject_uri, subject_offset = get_next_entity(selected_subject_index,
+                                                                                  subject_offset,
+                                                                                  possible_subject_entities)
 
                                 # the fact could not be added
                                 if subject_offset >= len(possible_subject_entities):
                                     # it's impossible to add facts for relation_id with given object "object_id"
-                                    # add the impossible subject type to the collection of saturated object ids
-                                    if selected_subject_type not in self.saturated_object_ids[relation_id]:
-                                        self.saturated_object_ids[relation_id][selected_subject_type] = set()
-
-                                    # the current object can't be added with the current relation and the selected
-                                    # subject type
-                                    self.saturated_object_ids[relation_id][selected_subject_type].add(object_id)
+                                    # to the select subject type (therefore the object_id is saturated for the subject
+                                    # type in this relation)
+                                    self.add_saturated_entity(relation_id,
+                                                              object_id,
+                                                              selected_subject_type,
+                                                              is_subject_id=False)
 
                             # if both object and subject were successfully selected (i.e., the offsets stayed in
                             # their bounds

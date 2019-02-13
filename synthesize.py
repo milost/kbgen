@@ -72,6 +72,7 @@ def main():
     # synthesize graph using the model
     graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
     print()
+    print(f"Synthesized graph contains {len(graph)} triples")
 
     print("Replacing ids with uris...")
     # replace the numbered rdf relations with the proper names from the original knowledge base
