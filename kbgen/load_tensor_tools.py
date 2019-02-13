@@ -5,6 +5,7 @@ from typing import Dict, List
 import numpy as np
 from rdflib import OWL, RDFS, Graph
 from scipy.sparse import coo_matrix, load_npz, save_npz
+from tqdm import tqdm
 
 from .tensor_models import DAGNode
 
@@ -164,19 +165,15 @@ def graph_npz_dir(input_dir: str) -> str:
 
 def load_graph_npz(input_dir: str) -> List[coo_matrix]:
     directory = graph_npz_dir(input_dir)
-    print(f"Loading property adjacency matrices from {directory}")
-    loaded_matrices: List[coo_matrix] = []
-    index = 0
-    while True:
-        file_name = f"{directory}/{index}.npz"
-        try:
-            matrix: coo_matrix = load_npz(file_name)
-            loaded_matrices.append(matrix)
-            index += 1
-            print(f"Loaded {index} property adjacency matrices.", end="\r")
-        except FileNotFoundError:
-            break
-    print(f"Loaded {index} property adjacency matrices.")
+    directory = Path(directory)
+    files: List[Path] = list(directory.glob("./*npz"))
+    print(f"Loading {len(files)} property adjacency matrices from {directory.absolute()}")
+    # pre-allocate list elements so the files can be read in any order
+    loaded_matrices: List[coo_matrix] = [None] * len(files)
+    for file in tqdm(files):
+        index = int(file.name.split(".")[0])
+        matrix: coo_matrix = load_npz(file)
+        loaded_matrices[index] = matrix
     return loaded_matrices
 
 

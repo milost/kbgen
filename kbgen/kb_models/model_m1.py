@@ -622,6 +622,7 @@ class KBModelM1(KBModel):
         return graph
 
     def replace_multitype_indices(self):
+        print("Replacing multitype indices with objects...")
         domain_distributions = self.relation_domain_distribution
         range_distribution = self.relation_range_distribution
         reverse_index = {index: MultiType(multitype) for multitype, index in self.multitype_index.items()}
