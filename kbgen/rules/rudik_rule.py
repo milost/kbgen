@@ -1,6 +1,6 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-from rdflib import URIRef
+from rdflib import URIRef, Graph
 
 from .rule import Rule
 from .literal import Literal
@@ -30,6 +30,23 @@ class RudikRule(Rule):
             "premise_triples": self.rudik_premise,
             "conclusion_triple": self.rudik_conclusion
         }
+
+    def is_negative(self):
+        return not self.rule_type
+
+    def produce(self,
+                graph: Graph,
+                subject_uri: URIRef,
+                relation_uri: URIRef,
+                object_uri: URIRef) -> List[Tuple[URIRef, URIRef, URIRef]]:
+        """
+        If this is a negative rule don't return anything (since negative rules don't produce new facts). Otherwise
+        just use the normal produce implementation.
+        """
+        if self.rule_type:
+            return super(RudikRule, self).produce(graph, subject_uri, relation_uri, object_uri)
+        else:
+            return []
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict, relation_to_id: Dict[URIRef, int]) -> 'RudikRule':

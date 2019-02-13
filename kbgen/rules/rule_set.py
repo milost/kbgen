@@ -30,6 +30,12 @@ class RuleSet(object):
 
                 self.rules_per_relation[literal.relation.id].append(rule)
 
+    def contains_negative_rules(self):
+        for rule in self.rules:
+            if rule.is_negative():
+                return True
+        return False
+
     @classmethod
     def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
         """

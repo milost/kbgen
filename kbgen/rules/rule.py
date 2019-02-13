@@ -131,6 +131,9 @@ class Rule(object):
             "pattern": self.full_query_pattern()
         }
 
+    def is_negative(self):
+        return False
+
     def produce(self,
                 graph: Graph,
                 subject_uri: URIRef,
