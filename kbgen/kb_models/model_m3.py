@@ -621,15 +621,15 @@ class KBModelM3(KBModelM2):
             # subject type
             self.saturated_object_ids[relation_id][other_entity_type].add(entity_id)
 
-    def synthesize(self,
-                   size: float = 1.0,
-                   number_of_entities: int = None,
-                   number_of_edges: int = None,
-                   debug: bool = False,
-                   pca: bool = True):
+    def initialize_synthesization(self, size: float = 1.0,
+                                  number_of_entities: int = None,
+                                  number_of_edges: int = None,
+                                  debug: bool = False,
+                                  pca: bool = True) -> Graph:
         """
-        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
-        entities and edges.
+        Initialize the synthesization process by doing a number of preprocessing steps before facts are generated.
+        These steps include filling the graph with metadata triples (e.g., entity type declarations), pruning the
+        relation distributions and initializing data structures used during the synthesization.
         :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
                      the model was trained on, 2.0 means it should have twice the size)
         :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
@@ -640,31 +640,12 @@ class KBModelM3(KBModelM2):
                                 parameter
         :param debug: boolean if logging should be on debug level
         :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
-        :return: the synthesized graph as rdf graph object
+        :return: the initialized graph as rdf graph object
         """
-
-        def get_next_entity(index: int, offset: int, possible_entites: Set[int]) -> Tuple[URIRef, int]:
-            """
-            Get the next entity from a list of possible entites. This is used to try out multiple possible entities
-            (i.e., instances) when adding a new fact.
-            :param index: the selected index for the entity (this is currently a random index)
-            :param offset: the current offset in the list of possible entities
-            :param possible_entites: the number of possible entity instances to choose from
-            :return: the uri of the next selected entity as well as the new offset
-            """
-            offset += 1
-            new_index = index + offset
-            new_index = new_index % len(possible_entites)
-            entity_id = list(possible_entites)[new_index]
-            uri = URIEntity(entity_id).uri
-            return uri, offset
-
-        print("Synthesizing HORN model")
-
-        level = logging.DEBUG if debug else logging.INFO
-        self.logger = create_logger(level, name="kbgen")
-        self.synth_time_logger = create_logger(level, name="synth_time")
-        self.query_time = create_logger(level, name="query_logger")
+        log_level = logging.DEBUG if debug else logging.INFO
+        self.logger = create_logger(log_level, name="kbgen")
+        self.synth_time_logger = create_logger(log_level, name="synth_time")
+        self.query_time = create_logger(log_level, name="query_logger")
 
         self.pca = pca
 
@@ -747,6 +728,49 @@ class KBModelM3(KBModelM2):
                                      for relation_id, entity_ids in self.relation_id_to_object_pool.items()}
         self.logger.debug(f"subject pool = {num_subjects_for_relations}")
         self.logger.debug(f"object pool = {num_objects_for_relations}")
+
+        return graph
+
+    def synthesize(self,
+                   size: float = 1.0,
+                   number_of_entities: int = None,
+                   number_of_edges: int = None,
+                   debug: bool = False,
+                   pca: bool = True):
+        """
+        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
+        entities and edges.
+        :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
+                     the model was trained on, 2.0 means it should have twice the size)
+        :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
+                                   will be determined by the number of entities on which the model was trained and the
+                                   size parameter
+        :param number_of_edges: the number of edges (facts) the synthesized graph should have. If not set this number
+                                will be determined by the number of edges on which the model was trained and the size
+                                parameter
+        :param debug: boolean if logging should be on debug level
+        :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
+        :return: the synthesized graph as rdf graph object
+        """
+
+        def get_next_entity(index: int, offset: int, possible_entites: Set[int]) -> Tuple[URIRef, int]:
+            """
+            Get the next entity from a list of possible entites. This is used to try out multiple possible entities
+            (i.e., instances) when adding a new fact.
+            :param index: the selected index for the entity (this is currently a random index)
+            :param offset: the current offset in the list of possible entities
+            :param possible_entites: the number of possible entity instances to choose from
+            :return: the uri of the next selected entity as well as the new offset
+            """
+            offset += 1
+            new_index = index + offset
+            new_index = new_index % len(possible_entites)
+            entity_id = list(possible_entites)[new_index]
+            uri = URIEntity(entity_id).uri
+            return uri, offset
+
+        print("Synthesizing HORN model")
+        graph = self.initialize_synthesization(size, number_of_entities, number_of_edges, debug, pca)
 
         self.logger.info("Synthesizing facts...")
         # progress bar
