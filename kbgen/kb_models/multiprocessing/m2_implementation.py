@@ -9,13 +9,7 @@ from .interfaces import LearnProcess, ResultCollector
 class M2LearnProcess(LearnProcess):
     def learn_distributions(self, relation_id: int):
         """
-        Learn the funtionality, inverse functionality, reflexiveness, density and number of distinct subjects and
-        objects for the current relation from the relation's adjacency matrix.
-        The index of each matrix is the id of the relation type.
-        The rows of each matrix contain the ids of the subject of the relation.
-        The columns of each matrix contain the ids of the object of the relation.
-
-        The result is added to the result queue.
+        For an in-depth explanation take a loot at the single core implementation in the M2-Model itself.
         :param relation_id: the relation id for which the features are learned
         """
         adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
