@@ -16,6 +16,7 @@ class MultiTypeLearnProcess(LearnProcess):
         For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
         :param relation_id: the relation id for which the features are learned
         """
+        print(f"Building multi type index for relation {relation_id}")
         adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
 
         num_edges = adjacency_matrix.nnz
