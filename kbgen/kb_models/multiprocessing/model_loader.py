@@ -1,10 +1,12 @@
 from multiprocessing import Queue
-from typing import List
+from typing import List, Dict
 
 from tqdm import tqdm
 
 from kbgen import KBModelM1, KBModelM2
 from .interfaces import LearnProcess, ResultCollector
+from .multitype_index import MultiTypeLearnProcess, MultiTypeResultCollector
+from .m1_implementation import M1LearnProcess, M1ResultCollector
 from .m2_implementation import M2LearnProcess, M2ResultCollector
 from kbgen.load_tensor_tools import num_adjacency_matrices
 
@@ -13,6 +15,7 @@ class ModelLoader(object):
     def __init__(self, input_dir: str, num_processes: int):
         self.input_dir = input_dir
         self.num_processes = num_processes
+        self.message: str = "Learning distributions..."
 
         self.process_type: type = None
 
@@ -27,8 +30,8 @@ class ModelLoader(object):
         for process in self.processes:
             process.terminate()
 
-    def _load(self):
-        print(f"Learning distributions...")
+    def _load(self, **kwargs):
+        print(self.message)
         task_queue = Queue()
         result_queue = Queue()
         num_relations = num_adjacency_matrices(self.input_dir)
@@ -38,7 +41,8 @@ class ModelLoader(object):
         for _ in range(self.num_processes):
             process: LearnProcess = self.process_type(input_dir=self.input_dir,
                                                       task_queue=task_queue,
-                                                      result_queue=result_queue)
+                                                      result_queue=result_queue,
+                                                      **kwargs)
             self.processes.append(process)
 
         print(f"Filling task queue with {num_relations} tasks")
@@ -63,12 +67,31 @@ class ModelLoader(object):
 
         return self.result_collector.build_model()
 
+    def load_m1(self):
+        """
+        First build the multi type index in parallel and aggregate it. Afterwards learn the distributions in parallel.
+
+        For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
+        :return: the trained m1 model
+        """
+        self.message = "Creating MultiType index..."
+        self.result_collector = MultiTypeResultCollector(self.input_dir)
+        self.process_type = MultiTypeLearnProcess
+        multi_type_index: Dict[frozenset, int] = self._load(dense_entity_types=self.result_collector.dense_entity_types)
+
+        self.message = "Learning distributions for M1 model..."
+        self.result_collector = M1ResultCollector(self.input_dir, multi_type_index)
+        self.process_type = M1LearnProcess
+        return self._load(dense_entity_types=self.result_collector.dense_entity_types,
+                          multitype_index=multi_type_index)
+
     def load_m2(self, m1_model: KBModelM1) -> KBModelM2:
         """
         For an in-depth explanation take a loot at the single core implementation in the M2-Model itself.
         :param m1_model the previously trained m1 model
-        :return: the learned m2 model
+        :return: the trained m2 model
         """
+        self.message = "Learning distributions for M2 model..."
         self.result_collector = M2ResultCollector(m1_model=m1_model)
         self.process_type = M2LearnProcess
         return self._load()
