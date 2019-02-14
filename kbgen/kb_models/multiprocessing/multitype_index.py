@@ -51,8 +51,10 @@ class MultiTypeLearnProcess(LearnProcess):
         if self.position is None:
             self.position = relation_id + 1
 
-        adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id).toarray()
-        coordinates: List[tuple] = list(zip(*adjacency_matrix.nonzero()))
+        adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
+        print(f"max subject id: {np.max(adjacency_matrix.row)}")
+        print(f"max object id: {np.max(adjacency_matrix.col)}")
+        coordinates: List[tuple] = list(zip(*adjacency_matrix.toarray().nonzero()))
 
         distinct_multi_types = set()
 
