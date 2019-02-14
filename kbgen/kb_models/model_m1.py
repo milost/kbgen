@@ -1,6 +1,11 @@
-import tqdm
+from multiprocessing import Process, Queue
+from multiprocessing.managers import SyncManager
+from queue import Empty
+
+from tqdm import tqdm
 import datetime
 import logging
+import numpy as np
 
 from rdflib import Graph, RDF, OWL, RDFS, URIRef
 from numpy.random import choice, randint
@@ -8,7 +13,8 @@ from typing import Dict, Tuple, List, Iterable, Optional
 from scipy.sparse import csr_matrix, coo_matrix
 
 from ..load_tensor_tools import load_graph_npz, load_types_npz, load_types_dict, load_relations_dict, \
-    load_type_hierarchy, load_prop_hierarchy, load_domains, load_ranges
+    load_type_hierarchy, load_prop_hierarchy, load_domains, load_ranges, load_single_adjacency_matrix, \
+    num_adjacency_matrices
 from .model import KBModel
 from ..tensor_models import DAGNode
 from ..util_models import URIEntity, URIRelation, URIType, MultiType
@@ -329,7 +335,7 @@ class KBModelM1(KBModel):
         type_assertions = 0
 
         # progess bar used for cli
-        progess_bar = tqdm.tqdm(total=synthetic_entity_count)
+        progess_bar = tqdm(total=synthetic_entity_count)
 
         # add all triples that define the is type of entity type relations for every synthetic entity
         for synthetic_entity_id in range(synthetic_entity_count):
@@ -595,7 +601,7 @@ class KBModelM1(KBModel):
 
         self.logger.info(f"{num_synthetic_facts} facts to be synthesized")
         # progress bar
-        self.progress_bar = tqdm.tqdm(total=num_synthetic_facts)
+        self.progress_bar = tqdm(total=num_synthetic_facts)
         # start delta used for time logging
         self.start_t = datetime.datetime.now()
 
@@ -643,20 +649,20 @@ class KBModelM1(KBModel):
     @staticmethod
     def extract_relation_distribution(relation_adjacency_matrices: List[coo_matrix], entity_types: csr_matrix):
 
-        class MultiTypeIndex(dict):
-            def __init__(self, *args):
-                super(MultiTypeIndex, self).__init__(args)
-
-            def __getitem__(self, item):
-                if item not in self:
-                    index = len(self)
-                    self.__setitem__(item, index)
-                    return index
-                else:
-                    return super().__getitem__(item)
-
-            def to_dict(self):
-                return dict(self)
+        # class MultiTypeIndex(dict):
+        #     def __init__(self, *args):
+        #         super(MultiTypeIndex, self).__init__(args)
+        #
+        #     def __getitem__(self, item):
+        #         if item not in self:
+        #             index = len(self)
+        #             self.__setitem__(item, index)
+        #             return index
+        #         else:
+        #             return super().__getitem__(item)
+        #
+        #     def to_dict(self):
+        #         return dict(self)
 
         multitype_index = MultiTypeIndex()
         dense_entity_types = entity_types.toarray()
@@ -676,7 +682,7 @@ class KBModelM1(KBModel):
         # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
         relation_range_distribution: Dict[int, Dict[int, Dict[int, int]]] = {}
 
-        for relation_id in tqdm.tqdm(range(len(relation_adjacency_matrices))):
+        for relation_id in tqdm(range(len(relation_adjacency_matrices))):
             # create empty inner dictionaries for the current relation
             domain_distribution = {}
             range_distribution = {}
@@ -809,3 +815,263 @@ class KBModelM1(KBModel):
         )
 
         return naive_model
+
+    @staticmethod
+    def generate_from_tensor_multiprocess(input_path: str, num_processes: int, debug: bool = False):
+        log_level = logging.DEBUG if debug else logging.INFO
+        logger = create_logger(log_level, log_to_console=True)
+
+        logger.info("Loading data...")
+
+        # the list of adjacency matrices of the object property relations created in load_tensor
+        # relation_adjacency_matrices = load_graph_npz(input_path)
+
+        # the entity type adjacency matrix created in load_tensor
+        entity_types = load_types_npz(input_path)
+
+        # the rdf domains and ranges created in load_tensor
+        domains = load_domains(input_path)
+        ranges = load_ranges(input_path)
+
+        # the entity type and the object property hierarchies created in load_tensor
+        entity_type_hierarchy = load_type_hierarchy(input_path)
+        object_property_hierarchy = load_prop_hierarchy(input_path)
+
+        # the dictionaries of entity types and of object properties pointing to their ids
+        entity_type_to_id = load_types_dict(input_path)
+        # relations are object properties
+        relation_to_id = load_relations_dict(input_path)
+
+        # compress entity type adjacency matrix if it is not already compressed
+        if not isinstance(entity_types, csr_matrix):
+            entity_types = entity_types.tocsr()
+
+        logger.info("Learning types distributions...")
+        # the entity type adjacency matrix has the dimensions num_entities x num_entity_types
+        count_entities = entity_types.shape[0]
+        count_types = entity_types.shape[1]
+
+        # number of different relations (object properties)
+        num_relations = num_adjacency_matrices(input_path)
+
+        # number of object property edges (number of non zero fields in every adjacency matrix)
+        # count_facts = sum([Xi.nnz for Xi in relation_adjacency_matrices])
+        count_facts = 0
+
+        # the distribution of entities over entity types
+        # the number of occurrences of every set of entity types that occurs
+        # dictionary that points from a multi type (a set of entity types) to its number of occurrences
+        entity_type_distribution = {}
+        for entity_type in entity_types:
+            entity_type_set = MultiType(entity_type.indices)
+
+            # add the multi type to the distribution if it is new
+            if entity_type_set not in entity_type_distribution:
+                entity_type_distribution[entity_type_set] = 0.0
+
+            entity_type_distribution[entity_type_set] += 1
+
+        logger.info("Building learning relations distributions...")
+        # the distribution of facts over relations (object properties)
+        # dictionary pointing from the id of an object property (relation) to the number of edges that exist for that
+        # relation
+        # relation_distribution = {relation_id: relation_adjacency_matrices[relation_id].nnz
+        #                          for relation_id in range(len(relation_adjacency_matrices))}
+        relation_distribution: Dict[int, int] = {}
+
+        # computed_distributions = KBModelM1.extract_relation_distribution(relation_adjacency_matrices, entity_types)
+        # domain_distribution, range_distribution, multitype_index = computed_distributions
+
+        # the distribution of subject entity types given the relation (object property)
+        # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
+        # every relation
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # number of occurrences of that subject's multi type
+        relation_domain_distribution: Dict[int, Dict[int, int]] = {}
+
+        # the distribution of object entity types given relation and subject entity type
+        # the number of times that a multi types occurs in a relation as an object for every relation and for every
+        # subject's multi type (i.e., the number of occurrences for a specific relation with a specific subject's entity
+        # type)
+        # dictionary pointing from an relation id to a dictionary that points from a subject's multi type to a
+        # dictionary that points from an object's multi type to the number of occurrences of that object's multi type
+        relation_range_distribution: Dict[int, Dict[int, Dict[int, int]]] = {}
+
+        manager = SyncManager()
+        # multitype_index = MultiTypeIndex()
+        manager.start()
+        shared_multitype_index = manager.dict()
+        dense_entity_types = entity_types.toarray()
+
+        task_queue = Queue()
+        result_queue = Queue()
+        processes = []
+
+        print(f"Creating {num_processes} worker processes")
+        for _ in range(num_processes):
+            process = LearnProcess(input_dir=input_path,
+                                   task_queue=task_queue,
+                                   result_queue=result_queue,
+                                   dense_entity_types=dense_entity_types,
+                                   shared_multitype_index=shared_multitype_index)
+            processes.append(process)
+
+        print(f"Filling task queue with {num_relations} tasks")
+        for relation_id in range(num_relations):
+            task_queue.put(relation_id)
+
+        for process in processes:
+            process.start()
+
+            # parse the results added to the result queue
+            progress_bar = tqdm(total=num_relations)
+            finished = 0
+            while True:
+                result: M1Result = result_queue.get(block=True)
+                count_facts += result.num_edges
+                relation_distribution[result.relation_id] = result.num_edges
+                relation_domain_distribution[result.relation_id] = result.domain_distribution
+                relation_range_distribution[result.relation_id] = result.range_distribution
+
+                progress_bar.update(1)
+                finished += 1
+                if finished == num_relations:
+                    break
+
+        # kill processes when we are done
+        for process in processes:
+            process.terminate()
+
+        naive_model = KBModelM1(
+            entity_type_hierarchy=entity_type_hierarchy,
+            object_property_hierarchy=object_property_hierarchy,
+            domains=domains,
+            ranges=ranges,
+            entity_count=count_entities,
+            relation_count=num_relations,
+            edge_count=count_facts,
+            entity_type_count=count_types,
+            entity_type_distribution=entity_type_distribution,
+            relation_distribution=relation_distribution,
+            relation_domain_distribution=relation_domain_distribution,
+            relation_range_distribution=relation_range_distribution,
+            relation_to_id=relation_to_id,
+            entity_type_to_id=entity_type_to_id,
+            multitype_index=dict(shared_multitype_index)
+        )
+
+        return naive_model
+
+
+
+class LearnProcess(Process):
+    def __init__(self, input_dir: str,
+                 task_queue: Queue,
+                 result_queue: Queue,
+                 dense_entity_types: np.ndarray,
+                 shared_multitype_index):
+        super(LearnProcess, self).__init__()
+        self.input_dir = input_dir
+        self.task_queue = task_queue
+        self.result_queue = result_queue
+        self.dense_entity_types = dense_entity_types
+        self.shared_multitype_index = shared_multitype_index
+
+    def run(self):
+        while True:
+            try:
+                relation_id = self.task_queue.get()
+                self.learn_distributions(relation_id)
+            except Empty:
+                break
+
+    def get_multitype_index(self, multitype: frozenset):
+        if multitype not in self.shared_multitype_index:
+            self.shared_multitype_index[multitype] = len(self.shared_multitype_index)
+        return self.shared_multitype_index[multitype]
+
+    def learn_distributions(self, relation_id: int):
+        """
+        TODO
+
+        The result is added to the result queue.
+        :param relation_id: the relation id for which the features are learned
+        """
+        adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
+        result = M1Result(relation_id=relation_id)
+
+        # number of edges for this relation
+        # used for fact count as well as relation distribution
+        result.num_edges = adjacency_matrix.nnz
+
+        domain_distribution = {}
+        range_distribution = {}
+
+        subject_ids_row = adjacency_matrix.row
+        object_ids_row = adjacency_matrix.col
+
+        # iterate over all non-zero fields of the adjacency matrix
+        # iterate over all edges that exist for the current relation
+        for index in range(result.num_edges):
+            # get subject and object id from the adjacency matrix
+            subject_id = subject_ids_row[index]
+            object_id = object_ids_row[index]
+            # create multi types from the two sets of entity types for each the subject and the object
+
+            multi_type, = self.dense_entity_types[subject_id].nonzero()
+            # subject_multi_type = self.shared_multitype_index[frozenset(multi_type)]
+            subject_multi_type = self.get_multitype_index(frozenset(multi_type))
+
+            multi_type, = self.dense_entity_types[object_id].nonzero()
+            # object_multi_type = self.shared_multitype_index[frozenset(multi_type)]
+            object_multi_type = self.get_multitype_index(frozenset(multi_type))
+
+            # if the subject's multi type is not known add it to the relation domain distribution and create an
+            # empty relation range distribution for that multi type
+            if subject_multi_type not in domain_distribution:
+                domain_distribution[subject_multi_type] = 0
+                range_distribution[subject_multi_type] = {}
+
+            # if the object's multi type is not known add it to the relation range distribution of the subject's
+            # multi type
+            if object_multi_type not in range_distribution[subject_multi_type]:
+                range_distribution[subject_multi_type][object_multi_type] = 0
+
+                # increment the number of occurrences of the subject's multi type in the relation domain distribution
+                domain_distribution[subject_multi_type] += 1
+                # increment the number of occurrences of the object's multi type in the relation range distribution
+                # of the subject's multi type
+                range_distribution[subject_multi_type][object_multi_type] += 1
+
+        result.domain_distribution = domain_distribution
+        result.range_distribution = range_distribution
+
+        self.result_queue.put(result)
+
+
+class M1Result(object):
+    def __init__(self,
+                 relation_id: int = None,
+                 num_edges: int = None,
+                 domain_distribution: Dict[MultiType, int] = None,
+                 range_distribution: Dict[MultiType, Dict[MultiType, int]] = None):
+        self.relation_id = relation_id
+        self.num_edges = num_edges
+        self.domain_distribution = domain_distribution
+        self.range_distribution = range_distribution
+
+
+class MultiTypeIndex(dict):
+    def __init__(self, *args):
+        super(MultiTypeIndex, self).__init__(args)
+
+    def __getitem__(self, item):
+        if item not in self:
+            index = len(self)
+            self.__setitem__(item, index)
+            return index
+        else:
+            return super().__getitem__(item)
+
+    def to_dict(self):
+        return dict(self)

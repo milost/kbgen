@@ -13,47 +13,55 @@ def cli_args() -> Namespace:
                         help="choice of model [M1, M2, M2, e] (e requires -sm)")
     parser.add_argument("-sm", "--source-kb-models", type=str, nargs="+", default=["M1", "M2", "M3"],
                         help="source model with entity selection bias [M1, M2, M3]")
-    parser.add_argument("-p", "--num-processes", type=int, default=1, help="the number of processes to use")
+    parser.add_argument("-p", "--num-processes", type=int, default=0, help="the number of processes to use")
     parser.add_argument("-r", "--rules-path", type=str, default=None, help="path to txt file with Amie horn rules")
     parser.add_argument("--rudik",  dest='rudik', action='store_true', help="set if the rules are rudik rules")
     return parser.parse_args()
 
 
-def build_m1_model(tensor_files_dir: str, output_name: str) -> Tuple[KBModelM1, str]:
+def build_m1_model(args: Namespace, output_name: str) -> Tuple[KBModelM1, str]:
     """
     Build an M1 model from a Knowledge Graph.
-    :param tensor_files_dir: path to directory containing the numpy serialized Knowledge Graph data structures
+    :param args: the command line arguments
     :param output_name: name that is used for the output file name
     :return: tuple of the generated M1 model and the output file name
     """
-    model = KBModelM1.generate_from_tensor(tensor_files_dir)
+    # path to directory containing the numpy serialized Knowledge Graph data structures
+    input_dir = args.input
+    if args.num_processes:
+        model = KBModelM1.generate_from_tensor_multiprocess(input_dir, args.num_processes)
+    else:
+        model = KBModelM1.generate_from_tensor(input_dir)
     return model, f"{output_name}-M1.pkl"
 
 
-def build_m2_model(tensor_files_dir: str, output_name: str, num_processes: int) -> Tuple[KBModelM2, str]:
+def build_m2_model(args: Namespace, output_name: str) -> Tuple[KBModelM2, str]:
     """
     Build an M2 model from a Knowledge Graph and a previously built and serialized M1 model. The M1 model must have been
     serialized with the same output_name passed to this method.
-    :param tensor_files_dir: path to directory containing the numpy serialized Knowledge Graph data structures
+    :param args: the command line arguments
     :param output_name: name that is used for the output file name
-    :param num_processes: the number of processes to use
     :return: tuple of the generated M2 model and the output file name
     """
+    # path to directory containing the numpy serialized Knowledge Graph data structures
+    input_dir = args.input
     m1_model_path = f"{output_name}/{output_name}-M1.pkl"
     m1_model = pickle.load(open(m1_model_path, "rb"))
     assert isinstance(m1_model, KBModelM1)
 
-    model = KBModelM2.generate_from_tensor_and_model_multiprocess(m1_model, tensor_files_dir, num_processes)
+    if args.num_processes:
+        model = KBModelM2.generate_from_tensor_and_model_multiprocess(m1_model, input_dir, args.num_processes)
+    else:
+        model = KBModelM2.generate_from_tensor_and_model(m1_model, input_dir)
     return model, f"{output_name}-M2.pkl"
 
 
-def build_m3_model(rule_file: str, output_name: str, parse_rudik: bool) -> Tuple[KBModelM3, str]:
+def build_m3_model(args: Namespace, output_name: str) -> Tuple[KBModelM3, str]:
     """
     Build an M3 model from a previously built and serialized M2 model and AMIE rules. The M2 model must have been
     serialized with the same output_name passed to this method.
-    :param rule_file: path to the file containing the AMIE rules
+    :param args: the command line arguments
     :param output_name: name that is used for the output file name
-    :param parse_rudik: if True the rules to parse are rudik rules
     :return: tuple of the generated M3 model and the output file name
     """
     m2_model_path = f"{output_name}/{output_name}-M2.pkl"
@@ -63,7 +71,10 @@ def build_m3_model(rule_file: str, output_name: str, parse_rudik: bool) -> Tuple
     assert isinstance(m2_model, KBModelM2)
     # dictionary pointing from the relations (entities) to their ids
     relation_to_id = m2_model.relation_to_id
-    if parse_rudik:
+    # path to the file containing the AMIE rules
+    rule_file = args.rules_path
+    # if True the rules are rudik rules
+    if args.rudik:
         rules = RuleSet.parse_rudik(rule_file, relation_to_id)
     else:
         rules = RuleSet.parse_amie(rule_file, relation_to_id)
@@ -126,17 +137,17 @@ def main():
     models_output = []
 
     if args.model == "M1":
-        model, output_name = build_m1_model(args.input, base)
+        model, output_name = build_m1_model(args, base)
         models.append(model)
         models_output.append(output_name)
 
     if args.model == "M2":
-        model, output_name = build_m2_model(args.input, base, args.num_processes)
+        model, output_name = build_m2_model(args, base)
         models.append(model)
         models_output.append(output_name)
 
     if args.model == "M3":
-        model, output_name = build_m3_model(args.rules_path, base, args.rudik)
+        model, output_name = build_m3_model(args, base)
         models.append(model)
         models_output.append(output_name)
 
