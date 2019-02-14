@@ -127,7 +127,7 @@ class Literal(object):
         # the v parameters start with v0 while the resulting id of v0 should be 3 (= 0 + 3)
         v_parameter_offset = 3
         subject_str = literal_triple["subject"]
-        if graph_iri in subject_str:
+        if graph_iri and graph_iri in subject_str:
             # TODO: handle literal subject (i.e., dbpedia uri)
             return None
         if subject_str in identifier_to_id:
@@ -136,7 +136,7 @@ class Literal(object):
             subject_id = int(subject_str[1:]) + v_parameter_offset
 
         object_str = literal_triple["object"]
-        if graph_iri in object_str:
+        if graph_iri and graph_iri in object_str:
             # TODO: handle literal object (i.e., dbpedia uri)
             return None
         if object_str in identifier_to_id:

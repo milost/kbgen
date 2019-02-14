@@ -31,6 +31,9 @@ class RudikRule(Rule):
             "conclusion_triple": self.rudik_conclusion
         }
 
+    def to_rudik(self):
+        return self
+
     def is_negative(self):
         return not self.rule_type
 

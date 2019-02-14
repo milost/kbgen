@@ -23,6 +23,30 @@ def cli_args() -> Namespace:
     return parser.parse_args()
 
 
+class URINameReplacer(object):
+    def __init__(self, model: KBModelM1):
+        self.relation_id_to_uri: Dict[int, URIRef] = {relation_id: relation_uri
+                                                      for relation_uri, relation_id in model.relation_to_id.items()}
+
+        self.entity_type_id_to_uri: Dict[int, URIRef] = {type_id: type_uri
+                                                         for type_uri, type_id in model.entity_type_to_id.items()}
+
+    def replace_name(self, rdf_entity: URIRef) -> URIRef:
+        """
+        Replace the name of URIRelations and URITypes while keeping the names of URIEntities.
+        :param rdf_entity: the synthesized URI that is resolved to its original name
+        :return: the resolved URI if the original URI was an URIRelation or an URIType, otherwise the synthesized URI
+        """
+        name = rdf_entity
+
+        if str(rdf_entity).startswith(URIRelation.prefix):
+            name = self.relation_id_to_uri[URIRelation.extract_id(rdf_entity).id]
+        elif str(rdf_entity).startswith(URIType.prefix):
+            name = self.entity_type_id_to_uri[URIType.extract_id(rdf_entity).id]
+
+        return URIRef(name)
+
+
 def replace_id_with_name(graph: Graph, model: KBModelM1) -> Graph:
     """
     Replace the numeric ids in the URIs of the entity types and relations with the original URIs from the knowledge base
@@ -32,31 +56,12 @@ def replace_id_with_name(graph: Graph, model: KBModelM1) -> Graph:
     :return: a copy of the synthesized graph, in which the relations and entity types have their original URIs
     """
     graph_with_names = Graph()
-    relation_id_to_uri: Dict[int, URIRef] = {relation_id: relation_uri
-                                             for relation_uri, relation_id in model.relation_to_id.items()}
-
-    entity_type_id_to_uri: Dict[int, URIRef] = {type_id: type_uri
-                                                for type_uri, type_id in model.entity_type_to_id.items()}
-
-    def replace_name(rdf_entity: URIRef) -> URIRef:
-        """
-        Replace the name of URIRelations and URITypes while keeping the names of URIEntities.
-        :param rdf_entity: the synthesized URI that is resolved to its original name
-        :return: the resolved URI if the original URI was an URIRelation or an URIType, otherwise the synthesized URI
-        """
-        name = rdf_entity
-
-        if str(rdf_entity).startswith(URIRelation.prefix):
-            name = relation_id_to_uri[URIRelation.extract_id(rdf_entity).id]
-        elif str(rdf_entity).startswith(URIType.prefix):
-            name = entity_type_id_to_uri[URIType.extract_id(rdf_entity).id]
-
-        return URIRef(name)
+    name_replacer = URINameReplacer(model)
 
     for subject_uri, predicate_uri, object_uri in graph.triples((None, None, None)):
-        subject_with_name = replace_name(subject_uri)
-        relation_with_name = replace_name(predicate_uri)
-        object_with_name = replace_name(object_uri)
+        subject_with_name = name_replacer.replace_name(subject_uri)
+        relation_with_name = name_replacer.replace_name(predicate_uri)
+        object_with_name = name_replacer.replace_name(object_uri)
         graph_with_names.add((subject_with_name, relation_with_name, object_with_name))
 
     return graph_with_names

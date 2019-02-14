@@ -22,6 +22,9 @@ class RuleSet(object):
         # relation type needs to be checked against all the rules in that list)
         self.rules_per_relation: Dict[int, List[Rule]] = {}
 
+        self.fill_rules_per_relation()
+
+    def fill_rules_per_relation(self):
         for rule in self.rules:
             for literal in rule.antecedents:
 
@@ -35,6 +38,10 @@ class RuleSet(object):
             if rule.is_negative():
                 return True
         return False
+
+    def to_rudik(self):
+        self.rules = [rule.to_rudik() for rule in self.rules]
+        self.fill_rules_per_relation()
 
     @classmethod
     def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
