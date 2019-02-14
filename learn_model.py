@@ -28,7 +28,11 @@ def build_m1_model(args: Namespace) -> Tuple[KBModelM1, str]:
     """
     # path to directory containing the numpy serialized Knowledge Graph data structures
     input_dir = args.input
-    model = KBModelM1.generate_from_tensor(input_dir)
+    if args.num_processes:
+        loader = ModelLoader(input_dir, args.num_processes)
+        model = loader.load_m1()
+    else:
+        model = KBModelM1.generate_from_tensor(input_dir)
     return model, f"{input_dir}-M1.pkl"
 
 
