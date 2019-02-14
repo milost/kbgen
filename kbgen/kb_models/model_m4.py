@@ -10,11 +10,12 @@ from ..util_models import URIRelation, Oracle, URIType
 
 class KBModelM4(KBModelM3):
     """
-    TODO
+    This model does not add any features to the M3 model. It only provides a different synthesize method that breaks
+    rules after the synthesization step and remembers which facts were removed via an oracle.
     """
     def __init__(self, m3_model: KBModelM3):
         """
-        TODO
+        Initialize lower model variables and the variables used for rule breaking in the synthesization step.
         """
         assert isinstance(m3_model, KBModelM3), f"Model is of type {type(m3_model)} but needs to be of type KBModelM3"
         super(KBModelM4, self).__init__(
@@ -63,6 +64,9 @@ class KBModelM4(KBModelM3):
                    number_of_edges: int = None,
                    debug: bool = False,
                    pca: bool = True):
+        """
+        This extends the M3 synthesization by breaking the rules afterwards and tracking what was broken and what not.
+        """
         graph = super(KBModelM4, self).synthesize(size, number_of_entities, number_of_edges, debug, pca)
         self.logger.info("Breaking rules...")
         for rule in self.rules.rules:
