@@ -3,7 +3,7 @@ from scipy.sparse import csr_matrix
 from ..model_m1 import KBModelM1
 from ..model_m2 import KBModelM2
 from kbgen.load_tensor_tools import load_single_adjacency_matrix
-from .learn_process import LearnProcess, ResultCollector
+from .interfaces import LearnProcess, ResultCollector
 
 
 class M2LearnProcess(LearnProcess):

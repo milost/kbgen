@@ -4,8 +4,8 @@ from typing import List
 from tqdm import tqdm
 
 from kbgen import KBModelM1, KBModelM2
-from .learn_process import LearnProcess, ResultCollector
-from .m2_process import M2LearnProcess, M2ResultCollector
+from .interfaces import LearnProcess, ResultCollector
+from .m2_implementation import M2LearnProcess, M2ResultCollector
 from kbgen.load_tensor_tools import num_adjacency_matrices
 
 
