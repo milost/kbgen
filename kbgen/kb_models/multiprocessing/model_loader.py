@@ -30,7 +30,13 @@ class ModelLoader(object):
         for process in self.processes:
             process.terminate()
 
-    def _load(self, **kwargs):
+    def _load(self, print_newlines: bool = False, **kwargs):
+        """
+        Builds a model given that a process type and result collector were set.
+        :param print_newlines: enable this if the processes use tqdm progress bars. If True num_process many newlines
+                               are printed when the task is done so that later output does not appear in the bars
+        :return: the built model
+        """
         print(self.message)
         task_queue = Queue()
         result_queue = Queue()
@@ -52,7 +58,7 @@ class ModelLoader(object):
         self.start_processes()
 
         # parse the results added to the result queue
-        progress_bar = tqdm(total=num_relations)
+        progress_bar = tqdm(total=num_relations, position=0)
         finished = 0
         while True:
             result = result_queue.get(block=True)
@@ -61,6 +67,9 @@ class ModelLoader(object):
             finished += 1
             if finished == num_relations:
                 break
+
+        if print_newlines:
+            print("\n" * (self.num_processes - 1))
 
         # kill processes when we are done
         self.kill_processes()
@@ -77,7 +86,8 @@ class ModelLoader(object):
         self.message = "Creating MultiType index..."
         self.result_collector = MultiTypeResultCollector(self.input_dir)
         self.process_type = MultiTypeLearnProcess
-        multi_type_index: Dict[frozenset, int] = self._load(dense_entity_types=self.result_collector.dense_entity_types)
+        multi_type_index: Dict[frozenset, int] = self._load(dense_entity_types=self.result_collector.dense_entity_types,
+                                                            print_newlines=True)
 
         self.message = "Learning distributions for M1 model..."
         self.result_collector = M1ResultCollector(self.input_dir, multi_type_index)

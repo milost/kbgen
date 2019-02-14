@@ -18,9 +18,9 @@ class MultiTypeLearnProcess(LearnProcess):
         For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
         :param relation_id: the relation id for which the features are learned
         """
-        # set the tqdm position to the first input index (which will be in 0..n with n = num_processes)
+        # set the tqdm position to the first input index (which will be in 1..n with n = num_processes)
         if self.position is None:
-            self.position = relation_id
+            self.position = relation_id + 1
 
         adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
 
