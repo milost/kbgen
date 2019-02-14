@@ -1,4 +1,4 @@
-from typing import Set, List
+from typing import Set
 
 import numpy as np
 from tqdm import tqdm
@@ -13,35 +13,6 @@ class MultiTypeLearnProcess(LearnProcess):
         self.dense_entity_types = dense_entity_types
         self.position: int = None
 
-    # def learn_distributions(self, relation_id: int):
-    #     """
-    #     For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
-    #     :param relation_id: the relation id for which the features are learned
-    #     """
-    #     # set the tqdm position to the first input index (which will be in 1..n with n = num_processes)
-    #     if self.position is None:
-    #         self.position = relation_id + 1
-    #
-    #     adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
-    #
-    #     num_edges = adjacency_matrix.nnz
-    #     subject_ids_row = adjacency_matrix.row
-    #     object_ids_row = adjacency_matrix.col
-    #
-    #     distinct_multi_types = set()
-    #
-    #     for index in tqdm(range(num_edges), position=self.position):
-    #         subject_id = subject_ids_row[index]
-    #         object_id = object_ids_row[index]
-    #
-    #         multi_type, = self.dense_entity_types[subject_id].nonzero()
-    #         distinct_multi_types.add(frozenset(multi_type))
-    #
-    #         multi_type, = self.dense_entity_types[object_id].nonzero()
-    #         distinct_multi_types.add(frozenset(multi_type))
-    #
-    #     self.result_queue.put(distinct_multi_types)
-
     def learn_distributions(self, relation_id: int):
         """
         For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
@@ -52,13 +23,17 @@ class MultiTypeLearnProcess(LearnProcess):
             self.position = relation_id + 1
 
         adjacency_matrix = load_single_adjacency_matrix(self.input_dir, relation_id)
-        print(f"max subject id: {np.max(adjacency_matrix.row)}")
-        print(f"max object id: {np.max(adjacency_matrix.col)}")
-        coordinates: List[tuple] = list(zip(*adjacency_matrix.toarray().nonzero()))
+
+        num_edges = adjacency_matrix.nnz
+        subject_ids_row = adjacency_matrix.row
+        object_ids_row = adjacency_matrix.col
 
         distinct_multi_types = set()
 
-        for subject_id, object_id in tqdm(coordinates, position=self.position):
+        for index in tqdm(range(num_edges), position=self.position):
+            subject_id = subject_ids_row[index]
+            object_id = object_ids_row[index]
+
             multi_type, = self.dense_entity_types[subject_id].nonzero()
             distinct_multi_types.add(frozenset(multi_type))
 
@@ -66,7 +41,6 @@ class MultiTypeLearnProcess(LearnProcess):
             distinct_multi_types.add(frozenset(multi_type))
 
         self.result_queue.put(distinct_multi_types)
-
 
 class MultiTypeResultCollector(ResultCollector):
     """
