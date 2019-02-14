@@ -1,6 +1,7 @@
 from typing import Set
 
 import numpy as np
+from tqdm import tqdm
 
 from kbgen.load_tensor_tools import load_single_adjacency_matrix, load_types_npz
 from .interfaces import LearnProcess, ResultCollector
@@ -25,7 +26,7 @@ class MultiTypeLearnProcess(LearnProcess):
 
         distinct_multi_types = set()
 
-        for index in range(num_edges):
+        for index in tqdm(range(num_edges)):
             subject_id = subject_ids_row[index]
             object_id = object_ids_row[index]
 
