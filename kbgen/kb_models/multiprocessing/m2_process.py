@@ -66,14 +66,14 @@ class M2ResultCollector(ResultCollector):
         self.relation_id_to_distinct_subjects = {}
         self.relation_id_to_distinct_objects = {}
 
-    def handle_result(self, result):
-        relation_id = result["relation_id"]
-        self.relation_id_to_distinct_subjects[relation_id] = result["num_distinct_subjects"]
-        self.relation_id_to_distinct_objects[relation_id] = result["num_distinct_objects"]
-        self.relation_id_to_density[relation_id] = result["density"]
-        self.functionalities[relation_id] = result["functionality"]
-        self.inverse_functionalities[relation_id] = result["inverse_functionality"]
-        self.relation_id_to_reflexiveness[relation_id] = result["reflexiveness"]
+    def handle_result(self, result: 'M2Result'):
+        relation_id = result.relation_id
+        self.relation_id_to_distinct_subjects[relation_id] = result.num_distinct_subjects
+        self.relation_id_to_distinct_objects[relation_id] = result.num_distinct_objects
+        self.relation_id_to_density[relation_id] = result.density
+        self.functionalities[relation_id] = result.functionality
+        self.inverse_functionalities[relation_id] = result.inverse_functionality
+        self.relation_id_to_reflexiveness[relation_id] = result.reflexiveness
 
     def build_model(self) -> KBModelM2:
         return KBModelM2(m1_model=self.m1_model,
@@ -88,11 +88,11 @@ class M2ResultCollector(ResultCollector):
 class M2Result(object):
     def __init__(self,
                  relation_id: int,
-                 functionality: float = None,
-                 inverse_functionality: float = None,
                  density: float = None,
                  num_distinct_subjects: int = None,
                  num_distinct_objects: int = None,
+                 functionality: float = None,
+                 inverse_functionality: float = None,
                  reflexiveness: bool = None):
         self.relation_id = relation_id
         self.num_distinct_subjects = num_distinct_subjects
