@@ -342,7 +342,7 @@ class KBModelM2(KBModelM1):
         # the index of each matrix is the id of the relation type
         # the rows of each matrix contain the ids of the subject of the relation
         # the columns of each matrix contain the ids of the object of the relation
-        print(f"Learning advances relation distributions...")
+        print(f"Learning advanced relation distributions...")
         for relation_id in tqdm(range(len(relation_adjaceny_matrices))):
             adjacency_matrix = relation_adjaceny_matrices[relation_id]
 
