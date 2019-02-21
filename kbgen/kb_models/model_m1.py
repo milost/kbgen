@@ -41,8 +41,8 @@ class KBModelM1(KBModel):
                  relation_domain_distribution: Dict[int, Dict[MultiType, int]],
                  relation_range_distribution: Dict[int, Dict[MultiType, Dict[MultiType, int]]],
                  relation_to_id: Dict[URIRef, int],
-                 entity_type_to_id: Dict[URIRef, int] = None,
-                 multitype_index: Dict[frozenset, int] = None):
+                 entity_type_to_id: Dict[URIRef, int],
+                 multitype_index: Dict[frozenset, int]):
         """
         Creates an M1 model with the passed data.
         :param entity_type_hierarchy: dictionary pointing from an entity type's id to its DAGNode in the hierarchy of
@@ -72,6 +72,7 @@ class KBModelM1(KBModel):
                                             multi type to the number of occurrences of that object's multi type
         :param relation_to_id: dictionary of the RDF relations and their ids
         :param entity_type_to_id: dictionary of the RDF entity types and their ids
+        :param multitype_index: index pointing from multitype to its index used in the distributions
         """
         super(KBModelM1, self).__init__()
         self.entity_count = entity_count
@@ -89,11 +90,11 @@ class KBModelM1(KBModel):
         self.domains = domains
         self.ranges = ranges
 
-        self.multitype_index = multitype_index
-
         self.entity_type_hierarchy = entity_type_hierarchy
         self.object_property_hierarchy = object_property_hierarchy
         self.fix_hierarchies()
+
+        self.replace_multitype_indices(multitype_index)
 
         # used for logging
         self.name = "M1 (NAIVE)"
@@ -569,9 +570,6 @@ class KBModelM1(KBModel):
         self.logger = create_logger(level, name="kbgen")
         self.synth_time_logger = create_logger(level, name="synth_time")
 
-        # replace the stored multitype indices with the correct objects
-        self.replace_multitype_indices()
-
         # scale the entity and edge count by the given size
         self.step = 1.0 / size
         num_synthetic_entities = int(self.entity_count / self.step)
@@ -627,11 +625,16 @@ class KBModelM1(KBModel):
         self.logger.info(f"Synthesized facts = {self.fact_count} from {num_synthetic_facts}")
         return graph
 
-    def replace_multitype_indices(self):
+    def replace_multitype_indices(self, multitype_index: Dict[frozenset, int]):
+        """
+        Replaces the multitypes indices in the distributions with the proper objects. This needs to be called after
+        learning this model.
+        :param multitype_index: the multitype index dictionary pointing from mutlitype to the index
+        """
         print("Replacing multitype indices with objects...")
         domain_distributions = self.relation_domain_distribution
         range_distribution = self.relation_range_distribution
-        reverse_index = {index: MultiType(multitype) for multitype, index in self.multitype_index.items()}
+        reverse_index = {index: MultiType(multitype) for multitype, index in multitype_index.items()}
 
         domain_distributions = {relation_id: {reverse_index[multitype]: count
                                               for multitype, count in distribution.items()}

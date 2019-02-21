@@ -653,9 +653,6 @@ class KBModelM3(KBModelM2):
 
         self.pca = pca
 
-        # replace the stored multitype indices with the correct objects
-        self.replace_multitype_indices()
-
         self.start_counts()
 
         self.logger.info(f"Original dataset contains {self.entity_count} entities and {self.edge_count} facts")

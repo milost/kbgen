@@ -34,6 +34,7 @@ def build_m1_model(args: Namespace) -> Tuple[KBModelM1, str]:
         model = loader.load_m1()
     else:
         model = KBModelM1.generate_from_tensor(input_dir)
+
     return model, f"{input_dir}-M1.pkl"
 
 

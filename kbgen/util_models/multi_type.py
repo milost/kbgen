@@ -13,3 +13,5 @@ class MultiType(object):
 
     def __str__(self):
         return str(self.types)
+
+    __repr__ = __str__
