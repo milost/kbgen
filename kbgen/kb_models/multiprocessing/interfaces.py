@@ -1,8 +1,32 @@
 from multiprocessing import Process
 from multiprocessing.queues import Queue
 from queue import Empty
+from typing import List
 
 from ..model_m1 import KBModelM1
+
+
+class MultiProcessingTask(object):
+    def __init__(self, num_processes: int):
+        self.num_processes = num_processes
+        self.process_type: type = None
+        self.processes: List[Process] = None
+
+    def create_processes(self, **kwargs):
+        print(f"Creating {self.num_processes} worker processes")
+        self.processes: List[Process] = []
+        for _ in range(self.num_processes):
+            process = self.process_type(**kwargs)
+            self.processes.append(process)
+        return self.processes
+
+    def start_processes(self):
+        for process in self.processes:
+            process.start()
+
+    def kill_processes(self):
+        for process in self.processes:
+            process.terminate()
 
 
 class LearnProcess(Process):

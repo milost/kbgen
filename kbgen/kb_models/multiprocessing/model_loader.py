@@ -3,32 +3,25 @@ from typing import List, Dict
 
 from tqdm import tqdm
 
-from kbgen import KBModelM1, KBModelM2
-from .interfaces import LearnProcess, ResultCollector
+from ..model_m1 import KBModelM1
+from ..model_m2 import KBModelM2
+from .interfaces import LearnProcess, ResultCollector, MultiProcessingTask
 from .multitype_index import MultiTypeLearnProcess, MultiTypeResultCollector
 from .m1_implementation import M1LearnProcess, M1ResultCollector
 from .m2_implementation import M2LearnProcess, M2ResultCollector
-from kbgen.load_tensor_tools import num_adjacency_matrices
+from ...load_tensor_tools import num_adjacency_matrices
 
 
-class ModelLoader(object):
+class ModelLoader(MultiProcessingTask):
     def __init__(self, input_dir: str, num_processes: int):
+        super(ModelLoader, self).__init__(num_processes)
         self.input_dir = input_dir
-        self.num_processes = num_processes
         self.message: str = "Learning distributions..."
 
         self.process_type: type = None
 
         self.result_collector: ResultCollector = None
         self.processes: List[LearnProcess] = []
-
-    def start_processes(self):
-        for process in self.processes:
-            process.start()
-
-    def kill_processes(self):
-        for process in self.processes:
-            process.terminate()
 
     def _load(self, print_newlines: bool = False, **kwargs):
         """
@@ -41,15 +34,11 @@ class ModelLoader(object):
         task_queue = Queue()
         result_queue = Queue()
         num_relations = num_adjacency_matrices(self.input_dir)
-        self.processes = []
 
-        print(f"Creating {self.num_processes} worker processes")
-        for _ in range(self.num_processes):
-            process: LearnProcess = self.process_type(input_dir=self.input_dir,
-                                                      task_queue=task_queue,
-                                                      result_queue=result_queue,
-                                                      **kwargs)
-            self.processes.append(process)
+        self.processes = self.create_processes(input_dir=self.input_dir,
+                                               task_queue=task_queue,
+                                               result_queue=result_queue,
+                                               **kwargs)
 
         print(f"Filling task queue with {num_relations} tasks")
         for relation_id in range(num_relations):
@@ -69,7 +58,7 @@ class ModelLoader(object):
                 break
 
         if print_newlines:
-            print("\n" * (self.num_processes - 1))
+            print("\n" * self.num_processes)
 
         # kill processes when we are done
         self.kill_processes()
