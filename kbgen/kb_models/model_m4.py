@@ -56,7 +56,12 @@ class KBModelM4(KBModelM3):
             if destroy_fact:
                 num_broken_facts += 1.0
                 graph.remove(fact_to_break)
-        self.rules_to_correctness_ratio[rule] = 1.0 - num_broken_facts / num_total_facts
+
+        if num_total_facts:
+            ratio = 1.0 - num_broken_facts / num_total_facts
+        else:
+            ratio = 1.0
+        self.rules_to_correctness_ratio[rule] = ratio
 
     def synthesize(self,
                    size: float = 1.0,
