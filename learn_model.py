@@ -28,6 +28,7 @@ def build_m1_model(args: Namespace) -> Tuple[KBModelM1, str]:
     """
     # path to directory containing the numpy serialized Knowledge Graph data structures
     input_dir = args.input
+    # TODO: check correctness!!
     if args.num_processes:
         loader = ModelLoader(input_dir, args.num_processes)
         model = loader.load_m1()

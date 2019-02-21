@@ -1,7 +1,7 @@
 from datetime import datetime
 from logging import Logger
 from multiprocessing import Process, Queue
-from typing import List
+from typing import List, Tuple
 
 from numpy.random import choice
 from rdflib import Graph
@@ -20,6 +20,14 @@ class M3Synthesization(MultiProcessingTask):
         self.logger: Logger = None
         self.aggregate_processes: List[Process] = None
 
+    def split_process_number(self) -> Tuple[int, int]:
+        if self.num_processes < 2:
+            raise RuntimeError(f"Not enough processes for M3 synthesization ({self.num_processes})")
+
+        aggregate_num_processes = max(1, int(self.num_processes * 0.2))
+        fact_num_processes = self.num_processes - aggregate_num_processes
+        return fact_num_processes, aggregate_num_processes
+
     def synthesize(self, size: float = 1.0) -> Graph:
         print("Synthesizing M3 model")
         print("Initializing graph...")
@@ -30,14 +38,20 @@ class M3Synthesization(MultiProcessingTask):
         fact_queue = Queue()
         aggregate_queue = Queue()
 
-        self.num_processes = 20
-        self.process_type = M3FactGenerationProcess
-        self.processes = self.create_processes(model=self.model, result_queue=fact_queue)
-        self.num_processes = 10
-        self.process_type = M3AggregateProcess
-        self.aggregate_processes = self.create_processes(fact_queue=fact_queue,
+        threshold = min(max(100, int(self.model.num_synthetic_facts / 10000)), 10000)
+        num_fact_processes, num_aggregate_processes = self.split_process_number()
+        print(f"Spawning {num_fact_processes} fact and {num_aggregate_processes} aggregate processes with threshold "
+              f"of {threshold}")
+
+        self.processes = self.create_processes(num_processes=num_fact_processes,
+                                               process_type=M3FactGenerationProcess,
+                                               model=self.model,
+                                               result_queue=fact_queue)
+        self.aggregate_processes = self.create_processes(num_processes=num_aggregate_processes,
+                                                         process_type=M3AggregateProcess,
+                                                         fact_queue=fact_queue,
                                                          result_queue=aggregate_queue,
-                                                         threshold=10000)
+                                                         threshold=threshold)
 
         print("Synthesizing facts in parallel")
         # set variables needed for progress logging
@@ -45,7 +59,7 @@ class M3Synthesization(MultiProcessingTask):
         progress_bar = tqdm(total=self.model.num_synthetic_facts)
 
         # start synthesization process
-        self.start_processes()
+        self.start_processes(self.processes)
         self.start_processes(self.aggregate_processes)
         result = set()
         fact_count = 0
@@ -58,7 +72,7 @@ class M3Synthesization(MultiProcessingTask):
                 fact_count += new_count
                 progress_bar.update(new_count)
 
-        self.kill_processes()
+        self.kill_processes(self.processes)
         self.kill_processes(self.aggregate_processes)
 
         print("Adding synthesized facts to graph...")
