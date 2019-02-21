@@ -218,6 +218,7 @@ def main():
     try:
         graph, rdf_format = ltt.load_graph_binary(input_dir)
     except FileNotFoundError:
+        print("File does not exist. Loading graph from input data...")
         graph, rdf_format = load_graph(args.input)
         ltt.save_graph_binary(input_dir, graph)
 
