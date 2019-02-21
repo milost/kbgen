@@ -4,6 +4,9 @@ from typing import Dict, Tuple, List
 from rdflib import Graph
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
+
+from tqdm import tqdm
+
 from kbgen import load_tensor_tools as ltt
 from scipy.sparse import coo_matrix
 
@@ -148,7 +151,7 @@ def create_property_adjacency_matrices(graph: Graph,
 
     print("Populating adjacency matrices...")
     # iterate over every triple that defines a relationship (object property) between two subjects
-    for subject, predicate, object in graph.triples((None, None, None)):
+    for subject, predicate, object in tqdm(graph):
         if subject in entity_to_id and object in entity_to_id and predicate in property_to_id:
             # unique ids of the subject, predicate and object
             subject_id = entity_to_id[subject]
@@ -160,10 +163,11 @@ def create_property_adjacency_matrices(graph: Graph,
             data_coo[predicate_id]["vals"].append(1)
             # data[p_i][s_i,o_i] = 1
 
+    print("Splitting adjacency into separate matrices...")
     # create sparse matrices for every object property by aggregating (row, column, value) tuples
     # these tuples have the values: (subject_id, object_id, 1)
     return [coo_matrix((p["vals"], (p["rows"], p["cols"])), shape=(len(entity_to_id), len(entity_to_id))) for p in
-            data_coo]
+            tqdm(data_coo)]
 
 
 def create_entity_type_adjacency_matrix(graph: Graph,
