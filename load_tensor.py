@@ -144,7 +144,7 @@ def create_property_adjacency_matrices(graph: Graph,
     with the unique identifier i
     """
     print("Allocating adjacency matrices...")
-    data_coo = [{"rows": [], "cols": [], "vals": []}] * len(property_to_id)
+    data_coo = [{"rows": [], "cols": [], "vals": []} for _ in range(len(property_to_id))]
 
     print("Populating adjacency matrices...")
     # iterate over every triple that defines a relationship (object property) between two subjects
