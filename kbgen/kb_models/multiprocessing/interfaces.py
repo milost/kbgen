@@ -12,20 +12,22 @@ class MultiProcessingTask(object):
         self.process_type: type = None
         self.processes: List[Process] = None
 
-    def create_processes(self, **kwargs):
+    def create_processes(self, **kwargs) -> List[Process]:
         print(f"Creating {self.num_processes} worker processes")
-        self.processes: List[Process] = []
+        processes: List[Process] = []
         for _ in range(self.num_processes):
             process = self.process_type(**kwargs)
-            self.processes.append(process)
-        return self.processes
+            processes.append(process)
+        return processes
 
-    def start_processes(self):
-        for process in self.processes:
+    def start_processes(self, processes: List[Process] = None):
+        processes = processes or self.processes
+        for process in processes:
             process.start()
 
-    def kill_processes(self):
-        for process in self.processes:
+    def kill_processes(self, processes: List[Process] = None):
+        processes = processes or self.processes
+        for process in processes:
             process.terminate()
 
 

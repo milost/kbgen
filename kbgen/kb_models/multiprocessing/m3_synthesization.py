@@ -1,6 +1,7 @@
 from datetime import datetime
 from logging import Logger
 from multiprocessing import Process, Queue
+from typing import List
 
 from numpy.random import choice
 from rdflib import Graph
@@ -17,33 +18,71 @@ class M3Synthesization(MultiProcessingTask):
         super(M3Synthesization, self).__init__(num_processes)
         self.model = model
         self.logger: Logger = None
-        self.fact_queue: Queue = None
-        self.process_type = M3FactGenerationProcess
+        self.aggregate_processes: List[Process] = None
 
     def synthesize(self, size: float = 1.0) -> Graph:
-        # initialize graph and model
+        print("Synthesizing M3 model")
+        print("Initializing graph...")
         graph: Graph = self.model.initialize_synthesization(size=size)
         self.logger = self.model.logger
 
         # create worker processes
-        result_queue = Queue()
-        self.processes = self.create_processes(model=self.model, result_queue=result_queue)
+        fact_queue = Queue()
+        aggregate_queue = Queue()
 
-        print("Synthesizing M3 model in parallel")
+        self.num_processes = 20
+        self.process_type = M3FactGenerationProcess
+        self.processes = self.create_processes(model=self.model, result_queue=fact_queue)
+        self.num_processes = 10
+        self.process_type = M3AggregateProcess
+        self.aggregate_processes = self.create_processes(fact_queue=fact_queue,
+                                                         result_queue=aggregate_queue,
+                                                         threshold=10000)
 
+        print("Synthesizing facts in parallel")
         # set variables needed for progress logging
         self.model.start_t = datetime.now()
-        self.model.progress_bar = tqdm(total=self.model.num_synthetic_facts)
+        progress_bar = tqdm(total=self.model.num_synthetic_facts)
 
         # start synthesization process
         self.start_processes()
-        while self.model.fact_count < self.model.num_synthetic_facts:
-            fact = result_queue.get(block=True)
-            self.model.add_fact(graph, fact)
+        self.start_processes(self.aggregate_processes)
+        result = set()
+        fact_count = 0
+        while fact_count < self.model.num_synthetic_facts:
+            subset = aggregate_queue.get(block=True)
+            old_count = len(result)
+            result = result.union(subset)
+            new_count = len(result) - old_count
+            if new_count:
+                fact_count += new_count
+                progress_bar.update(new_count)
 
         self.kill_processes()
+        self.kill_processes(self.aggregate_processes)
 
+        print("Adding synthesized facts to graph...")
+        for fact in tqdm(result):
+            graph.add(fact)
+        print()
         return graph
+
+
+class M3AggregateProcess(Process):
+    def __init__(self, fact_queue: Queue, result_queue: Queue, threshold: int):
+        super(M3AggregateProcess, self).__init__()
+        self.fact_queue = fact_queue
+        self.result_queue = result_queue
+        self.threshold = threshold
+        self.result = set()
+
+    def run(self):
+        while True:
+            fact = self.fact_queue.get(block=True)
+            self.result.add(fact)
+            if len(self.result) >= self.threshold:
+                self.result_queue.put(self.result)
+                self.result = set()
 
 
 class M3FactGenerationProcess(Process):
