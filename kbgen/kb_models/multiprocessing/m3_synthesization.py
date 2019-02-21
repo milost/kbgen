@@ -132,8 +132,13 @@ class M3FactGenerationProcess(Process):
 
         number_of_possible_subjects = len(possible_subject_entities)
 
-        # only continue if the relation has a non-empty pool of possible subjects
-        if number_of_possible_subjects > 0:
+        # only continue if the relation has a non-empty pool of possible subjects and there is a range
+        # distribution for the selected subject type
+        if (
+            number_of_possible_subjects > 0
+            and selected_subject_type in self.model.relation_range_distribution_copy[relation_id]
+            and self.model.relation_range_distribution_copy[relation_id][selected_subject_type]
+        ):
             subjects, object_type, objects = self.model.choose_object_type_and_instances(relation_id,
                                                                                          selected_subject_type,
                                                                                          possible_subject_entities)
