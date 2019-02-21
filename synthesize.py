@@ -4,8 +4,10 @@ from typing import Dict
 
 from rdflib import Graph, URIRef
 
+from kbgen import KBModelM3
 from kbgen.kb_models import KBModelM1
 from kbgen.kb_models import KBModelM4
+from kbgen.kb_models.multiprocessing.m3_synthesization import M3Synthesization
 from kbgen.util import dump_tsv
 from kbgen.util_models import URIRelation, URIType
 
@@ -19,6 +21,7 @@ def cli_args() -> Namespace:
     parser.add_argument("-ne", "--nentities", type=int, default=None, help="number of entities")
     parser.add_argument("-nf", "--nfacts", type=int, default=None, help="number of facts")
     parser.add_argument("-d", "--debug", dest="debug", action="store_true", help="debug mode")
+    parser.add_argument("-p", "--num-processes", type=int, default=0, help="the number of processes to use")
     parser.set_defaults(debug=False)
     return parser.parse_args()
 
@@ -75,7 +78,11 @@ def main():
     model = pickle.load(open(args.input, "rb"))
 
     # synthesize graph using the model
-    graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
+    if args.num_processes and isinstance(model, KBModelM3):
+        synthesizer = M3Synthesization(model, args.num_processes)
+        graph = synthesizer.synthesize(size=args.size)
+    else:
+        graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
     print()
     print(f"Synthesized graph contains {len(graph)} triples")
 

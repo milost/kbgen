@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Dict, Set, Tuple
 
 import numpy as np
-import tqdm
+from tqdm import tqdm
 from matplotlib import pyplot as plt
 from numpy.random import choice
 from rdflib import Graph, URIRef
@@ -836,7 +836,7 @@ class KBModelM3(KBModelM2):
 
         self.logger.info("Synthesizing facts...")
         # progress bar
-        self.progress_bar = tqdm.tqdm(total=self.num_synthetic_facts)
+        self.progress_bar = tqdm(total=self.num_synthetic_facts)
         # start delta used for time logging
         self.start_t = datetime.datetime.now()
 
@@ -905,15 +905,12 @@ class KBModelM3(KBModelM2):
                     # only continue if the relation has non-empty pools of possible subjects and objects
                     if number_of_possible_objects > 0 and number_of_possible_subjects > 0:
 
-                        # choose a subject from the pool of possible subjects
-                        # TODO: what does this model do (implemented in emi model)
+                        # choose a random subject from the pool of possible subjects
                         subject_model = self.select_subject_model(relation_id, selected_subject_type)
-
                         selected_subject_index = self.select_instance(number_of_possible_subjects, subject_model)
                         subject_id = list(possible_subject_entities)[selected_subject_index]
 
-                        # choose an object from the pool of possible objects
-                        # TODO: what does this model do (implemented in emi model)
+                        # choose a random object from the pool of possible objects
                         object_model = self.select_object_model(relation_id,
                                                                 selected_subject_type,
                                                                 selected_object_type)
