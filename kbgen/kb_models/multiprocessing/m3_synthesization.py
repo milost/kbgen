@@ -38,7 +38,7 @@ class M3Synthesization(MultiProcessingTask):
         fact_queue = Queue()
         aggregate_queue = Queue()
 
-        threshold = min(max(100, int(self.model.num_synthetic_facts / 10000)), 10000)
+        threshold = 1000
         num_fact_processes, num_aggregate_processes = self.split_process_number()
         print(f"Spawning {num_fact_processes} fact and {num_aggregate_processes} aggregate processes with threshold "
               f"of {threshold}")
