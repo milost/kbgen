@@ -40,10 +40,10 @@ For this example we use a small knowledge base from the Semantic Web dog food ab
 - Then Learn the models:
 
  ```
- python learn_model.py eswc2015.ext -m M1
- python learn_model.py eswc2015.ext -m M2
- python learn_model.py eswc2015.ext -m M3 -r eswc2015-AmieRules.txt
- python learn_model.py eswc2015.ext -m e -sm M1 M2 M3
+ python learn_model.py eswc2015.npz -m M1
+ python learn_model.py eswc2015.npz -m M2
+ python learn_model.py eswc2015.npz -m M3 -r eswc2015-AmieRules.txt
+ python learn_model.py eswc2015.npz -m e -sm M1 M2 M3
  ```
 
  The commands need to be executed in the order above because one model is an extension of the other.
