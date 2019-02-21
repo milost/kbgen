@@ -80,7 +80,7 @@ def extract_entities(graph: Graph, entity_type_to_id: Dict[str, int]) -> Dict[st
     identifiers.
     :param graph: the graph object of the Knowledge Graph
     :param entity_type_to_id: the dictionary of the entity types and their unique identifies
-    :return: a dictionary of entity types pointing to their id
+    :return: a dictionary of entities pointing to their id
     """
     # dictionary of all subjects that are not types (entities)
     # contains tuples of (entity, entity_id)
