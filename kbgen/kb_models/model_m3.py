@@ -4,17 +4,16 @@ from copy import deepcopy
 from typing import Dict, Set, Tuple
 
 import numpy as np
-import tqdm
+from tqdm import tqdm
 from matplotlib import pyplot as plt
-from kb_models.model_m2 import KBModelM2
 from numpy.random import choice
 from rdflib import Graph, URIRef
-from rdflib.namespace import RDF
 import datetime
 
-from rules import RuleSet
-from util_models import URIEntity, URIRelation, MultiType
-from util import normalize, create_logger
+from .model_m2 import KBModelM2
+from ..rules import RuleSet
+from ..util_models import URIEntity, URIRelation, MultiType
+from ..util import normalize, create_logger
 
 
 class KBModelM3(KBModelM2):
@@ -184,6 +183,10 @@ class KBModelM3(KBModelM2):
 
             # iterate over the rules
             for rule in rules:
+                # skip negative rules since they don't produce new facts
+                if rule.is_negative():
+                    continue
+
                 ##### TODO: this as well?
                 # # only adhere to the rule according to its confidence level (i.e. a confidence of 0.5 means that only
                 # # for half of the facts for which the rule would apply it is applied)
@@ -593,15 +596,44 @@ class KBModelM3(KBModelM2):
 
         return relation_id_to_range_entity_id_pool
 
-    def synthesize(self,
-                   size: float = 1.0,
-                   number_of_entities: int = None,
-                   number_of_edges: int = None,
-                   debug: bool = False,
-                   pca: bool = True):
+    def add_saturated_entity(self, relation_id: int, entity_id: int, other_entity_type: MultiType, is_subject_id: bool):
         """
-        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
-        entities and edges.
+        Adds an entity to the pool of saturated entities for a given entity type of the other end of the fact (i.e.,
+        a pool of subject ids for each object entity type and a pool of object ids for a pool of subject entity types).
+        :param relation_id: the current relation
+        :param entity_id: the id of the entity (either subject or object)
+        :param other_entity_type: the entity type of the other entity (if the entity_id refers to a subject this type
+                                  refers to the object type and vice versa)
+        :param is_subject_id: if True the entity_id refers to a subject, if False to an object
+        """
+        if is_subject_id:
+            # it's impossible to add facts for relation_id with given subject "subject_id"
+            # add the impossible object type to the collection of saturated subject ids
+            if other_entity_type not in self.saturated_subject_ids[relation_id]:
+                self.saturated_subject_ids[relation_id][other_entity_type] = set()
+
+            # the current subject can't be added with the current relation and the selected
+            # object type
+            self.saturated_subject_ids[relation_id][other_entity_type].add(entity_id)
+        else:
+            # it's impossible to add facts for relation_id with given object "object_id"
+            # add the impossible subject type to the collection of saturated object ids
+            if other_entity_type not in self.saturated_object_ids[relation_id]:
+                self.saturated_object_ids[relation_id][other_entity_type] = set()
+
+            # the current object can't be added with the current relation and the selected
+            # subject type
+            self.saturated_object_ids[relation_id][other_entity_type].add(entity_id)
+
+    def initialize_synthesization(self, size: float = 1.0,
+                                  number_of_entities: int = None,
+                                  number_of_edges: int = None,
+                                  debug: bool = False,
+                                  pca: bool = True) -> Graph:
+        """
+        Initialize the synthesization process by doing a number of preprocessing steps before facts are generated.
+        These steps include filling the graph with metadata triples (e.g., entity type declarations), pruning the
+        relation distributions and initializing data structures used during the synthesization.
         :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
                      the model was trained on, 2.0 means it should have twice the size)
         :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
@@ -612,14 +644,12 @@ class KBModelM3(KBModelM2):
                                 parameter
         :param debug: boolean if logging should be on debug level
         :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
-        :return: the synthesized graph as rdf graph object
+        :return: the initialized graph as rdf graph object
         """
-        print("Synthesizing HORN model")
-
-        level = logging.DEBUG if debug else logging.INFO
-        self.logger = create_logger(level, name="kbgen")
-        self.synth_time_logger = create_logger(level, name="synth_time")
-        self.query_time = create_logger(level, name="query_logger")
+        log_level = logging.DEBUG if debug else logging.INFO
+        self.logger = create_logger(log_level, name="kbgen")
+        self.synth_time_logger = create_logger(log_level, name="synth_time")
+        self.query_time = create_logger(log_level, name="query_logger")
 
         self.pca = pca
 
@@ -700,15 +730,118 @@ class KBModelM3(KBModelM2):
         self.logger.debug(f"subject pool = {num_subjects_for_relations}")
         self.logger.debug(f"object pool = {num_objects_for_relations}")
 
+        return graph
+
+    def choose_object_type_and_instances(self,
+                                         relation_id: int,
+                                         selected_subject_type: MultiType,
+                                         possible_subject_entities: Set[int]) -> tuple:
+        """
+        Chooses an object type and create the list of possible instances of that type. These possible instances are then
+        filtered further according to a few things.
+        First, the inverse functionality is enforced.
+        Second, saturated objects for the selected subject type are removed from that list.
+        Third, saturated subjects for the selected object type are removed from the list of possible subject entities.
+        Fourth, non-reflexiveness is enforced by removing the possible subject entities from the possible object
+        entities if the relation does not allow reflexive edges.
+
+        :param relation_id: id of the current relation
+        :param selected_subject_type: the subject type that was selected
+        :param possible_subject_entities: the entity instances that are candidates for the fact that is generated
+        :return: tuple of the updated possible subject entities, the selected object type and the possible object
+                 entities
+        """
+        # select the multi type of the object
+        selected_object_type = choice(
+            list(self.relation_range_distribution_copy[relation_id][selected_subject_type].keys()),
+            replace=True,
+            p=normalize(self.relation_range_distribution_copy[relation_id][selected_subject_type].values()))
+
+        # entity ids of all synthetic entities that have the selected multi type
+        possible_object_entities = set(self.entity_types_to_entity_ids[selected_object_type])
+
+        # if the relation has an inverse functionality score of 1.0 (i.e., it has a subject pool) choose
+        # only the possible entities that are also in the object pool
+        if relation_id in self.relation_id_to_object_pool:
+            pool_objects = self.relation_id_to_object_pool[relation_id]
+            possible_object_entities = possible_object_entities.intersection(pool_objects)
+
+        # if the selected subject type was already added to the list of saturated object ids, remove all
+        # objects of that list from the list of possible object entities
+        if selected_subject_type in self.saturated_object_ids[relation_id]:
+            # these objects were not able to be added with the current relation and the selected subject
+            # type
+            saturated_objects = self.saturated_object_ids[relation_id][selected_subject_type]
+            possible_object_entities = possible_object_entities - saturated_objects
+
+        # if the selected object type was already added to the list of saturated subject ids, remove all
+        # subjects of that list from the list of possible subject entities
+        if selected_object_type in self.saturated_subject_ids[relation_id]:
+            # these subjects were not able to be added with the current relation and the selected object
+            # type
+            saturated_subjects = self.saturated_subject_ids[relation_id][selected_object_type]
+            possible_subject_entities = possible_subject_entities - saturated_subjects
+
+        # ensures non-reflexiveness by removing subject id from objects pool
+        if not self.relation_id_to_reflexiveness[relation_id]:
+            for subject_id in possible_subject_entities:
+                if subject_id in possible_object_entities:
+                    possible_object_entities.remove(subject_id)
+
+        return possible_subject_entities, selected_object_type, possible_object_entities
+
+    def synthesize(self,
+                   size: float = 1.0,
+                   number_of_entities: int = None,
+                   number_of_edges: int = None,
+                   debug: bool = False,
+                   pca: bool = True):
+        """
+        Synthesizes a knowledge base of a given size either determined by a scaling factor or a static number of
+        entities and edges.
+        :param size: scale of the synthesized knowledge base (e.g., 1.0 means it should have the same size as the KB
+                     the model was trained on, 2.0 means it should have twice the size)
+        :param number_of_entities: the number of entities the synthesized graph should have. If not set, this number
+                                   will be determined by the number of entities on which the model was trained and the
+                                   size parameter
+        :param number_of_edges: the number of edges (facts) the synthesized graph should have. If not set this number
+                                will be determined by the number of edges on which the model was trained and the size
+                                parameter
+        :param debug: boolean if logging should be on debug level
+        :param pca: boolean if PCA (partial completeness assumption) should be used. This parameter is not used
+        :return: the synthesized graph as rdf graph object
+        """
+
+        def get_next_entity(index: int, offset: int, possible_entites: Set[int]) -> Tuple[URIRef, int]:
+            """
+            Get the next entity from a list of possible entites. This is used to try out multiple possible entities
+            (i.e., instances) when adding a new fact.
+            :param index: the selected index for the entity (this is currently a random index)
+            :param offset: the current offset in the list of possible entities
+            :param possible_entites: the number of possible entity instances to choose from
+            :return: the uri of the next selected entity as well as the new offset
+            """
+            offset += 1
+            new_index = index + offset
+            new_index = new_index % len(possible_entites)
+            entity_id = list(possible_entites)[new_index]
+            uri = URIEntity(entity_id).uri
+            return uri, offset
+
+        print("Synthesizing HORN model")
+        graph = self.initialize_synthesization(size, number_of_entities, number_of_edges, debug, pca)
+
         self.logger.info("Synthesizing facts...")
         # progress bar
-        self.progress_bar = tqdm.tqdm(total=self.num_synthetic_facts)
+        self.progress_bar = tqdm(total=self.num_synthetic_facts)
         # start delta used for time logging
         self.start_t = datetime.datetime.now()
 
         # initialize variables for pool sizes
         number_of_possible_subjects = 0
         number_of_possible_objects = 0
+
+        # contains negative rules
 
         # add facts until the desired fact count is reached and the adjusted relation distribution is not empty
         while self.fact_count < self.num_synthetic_facts and self.adjusted_relations_distribution_copy:
@@ -754,41 +887,12 @@ class KBModelM3(KBModelM2):
                     and selected_subject_type in self.relation_range_distribution_copy[relation_id]
                     and self.relation_range_distribution_copy[relation_id][selected_subject_type]
                 ):
-                    # select the multi type of the object
-                    selected_object_type = choice(
-                        list(self.relation_range_distribution_copy[relation_id][selected_subject_type].keys()),
-                        replace=True,
-                        p=normalize(self.relation_range_distribution_copy[relation_id][selected_subject_type].values()))
-
-                    # entity ids of all synthetic entities that have the selected multi type
-                    possible_object_entities = set(self.entity_types_to_entity_ids[selected_object_type])
-
-                    # if the relation has an inverse functionality score of 1.0 (i.e., it has a subject pool) choose
-                    # only the possible entities that are also in the object pool
-                    if relation_id in self.relation_id_to_object_pool:
-                        pool_objects = self.relation_id_to_object_pool[relation_id]
-                        possible_object_entities = possible_object_entities.intersection(pool_objects)
-
-                    # if the selected subject type was already added to the list of saturated object ids, remove all
-                    # objects of that list from the list of possible object entities
-                    if selected_subject_type in self.saturated_object_ids[relation_id]:
-                        # these objects were not able to be added with the current relation and the selected subject
-                        # type
-                        saturated_objects = self.saturated_object_ids[relation_id][selected_subject_type]
-                        possible_object_entities = possible_object_entities - saturated_objects
-
-                    # if the selected object type was already added to the list of saturated subject ids, remove all
-                    # subjects of that list from the list of possible subject entities
-                    if selected_object_type in self.saturated_subject_ids[relation_id]:
-                        # these subjects were not able to be added with the current relation and the selected object
-                        # type
-                        saturated_subjects = self.saturated_subject_ids[relation_id][selected_object_type]
-                        possible_subject_entities = possible_subject_entities - saturated_subjects
-
-                    # ensures non-reflexiveness by removing subject id from objects pool
-                    if not self.relation_id_to_reflexiveness[relation_id] and subject_id in possible_object_entities:
-                        possible_object_entities.remove(subject_id)
-
+                    subjects, object_type, objects = self.choose_object_type_and_instances(relation_id,
+                                                                                           selected_subject_type,
+                                                                                           possible_subject_entities)
+                    possible_subject_entities = subjects
+                    selected_object_type = object_type
+                    possible_object_entities = objects
                     number_of_possible_subjects = len(possible_subject_entities)
                     number_of_possible_objects = len(possible_object_entities)
                     self.logger.debug(
@@ -798,15 +902,12 @@ class KBModelM3(KBModelM2):
                     # only continue if the relation has non-empty pools of possible subjects and objects
                     if number_of_possible_objects > 0 and number_of_possible_subjects > 0:
 
-                        # choose a subject from the pool of possible subjects
-                        # TODO: what does this model do (implemented in emi model)
+                        # choose a random subject from the pool of possible subjects
                         subject_model = self.select_subject_model(relation_id, selected_subject_type)
-
                         selected_subject_index = self.select_instance(number_of_possible_subjects, subject_model)
                         subject_id = list(possible_subject_entities)[selected_subject_index]
 
-                        # choose an object from the pool of possible objects
-                        # TODO: what does this model do (implemented in emi model)
+                        # choose a random object from the pool of possible objects
                         object_model = self.select_object_model(relation_id,
                                                                 selected_subject_type,
                                                                 selected_object_type)
@@ -831,22 +932,19 @@ class KBModelM3(KBModelM2):
                                     and object_offset < len(possible_object_entities)
                                 ):
                                     # try adding the fact with the next possible object
-                                    object_offset += 1
-                                    new_object_index = selected_object_index + object_offset
-                                    new_object_index = new_object_index % len(possible_object_entities)
-                                    object_id = list(possible_object_entities)[new_object_index]
-                                    object_uri = URIEntity(object_id).uri
+                                    object_uri, object_offset = get_next_entity(selected_object_index,
+                                                                                object_offset,
+                                                                                possible_object_entities)
 
                                 # the fact could not be added
                                 if object_offset >= len(possible_object_entities):
-                                    # it's impossible to add facts for relation_id with given subject "subject_id"
-                                    # add the impossible object type to the collection of saturated subject ids
-                                    if selected_object_type not in self.saturated_subject_ids[relation_id]:
-                                        self.saturated_subject_ids[relation_id][selected_object_type] = set()
-
-                                    # the current subject can't be added with the current relation and the selected
-                                    # object type
-                                    self.saturated_subject_ids[relation_id][selected_object_type].add(subject_id)
+                                    # it's impossible to add facts for relation_id with given object "subject_id"
+                                    # to the select object type (therefore the subject_id is saturated for the object
+                                    # type in this relation)
+                                    self.add_saturated_entity(relation_id,
+                                                              subject_id,
+                                                              selected_object_type,
+                                                              is_subject_id=True)
                             else:
                                 # this line should be unnecessary
                                 object_id = list(possible_object_entities)[selected_object_index]
@@ -858,22 +956,19 @@ class KBModelM3(KBModelM2):
                                     and subject_offset < len(possible_subject_entities)
                                 ):
                                     # try adding fact with the next possible subjects
-                                    subject_offset += 1
-                                    new_subect_index = selected_subject_index + subject_offset
-                                    new_subect_index = new_subect_index % len(possible_subject_entities)
-                                    subject_id = list(possible_subject_entities)[new_subect_index]
-                                    subject_uri = URIEntity(subject_id).uri
+                                    subject_uri, subject_offset = get_next_entity(selected_subject_index,
+                                                                                  subject_offset,
+                                                                                  possible_subject_entities)
 
                                 # the fact could not be added
                                 if subject_offset >= len(possible_subject_entities):
                                     # it's impossible to add facts for relation_id with given object "object_id"
-                                    # add the impossible subject type to the collection of saturated object ids
-                                    if selected_subject_type not in self.saturated_object_ids[relation_id]:
-                                        self.saturated_object_ids[relation_id][selected_subject_type] = set()
-
-                                    # the current object can't be added with the current relation and the selected
-                                    # subject type
-                                    self.saturated_object_ids[relation_id][selected_subject_type].add(object_id)
+                                    # to the select subject type (therefore the object_id is saturated for the subject
+                                    # type in this relation)
+                                    self.add_saturated_entity(relation_id,
+                                                              object_id,
+                                                              selected_subject_type,
+                                                              is_subject_id=False)
 
                             # if both object and subject were successfully selected (i.e., the offsets stayed in
                             # their bounds

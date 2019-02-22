@@ -10,15 +10,21 @@ __pycache__/
 # Log files
 *.log
 
+# other
+.DS_Store
+
 # Example files
 eswc2015-AmieRules.txt
 eswc2015.n3
 
 # kbgen model and result files
 *.npz
+*.npy
 *.pkl
 *.n3
 *.tsv
 *.ttl
 *.txt
 *oracle.json
+*oracle.bin
+*.json

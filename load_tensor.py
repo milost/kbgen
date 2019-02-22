@@ -1,10 +1,13 @@
+from pathlib import Path
 from typing import Dict, Tuple, List
 
 from rdflib import Graph
-import numpy as np
 from rdflib.namespace import RDF, RDFS, OWL
 from argparse import ArgumentParser, Namespace
-from load_tensor_tools import get_ranges, get_domains, get_type_dag, get_prop_dag
+
+from tqdm import tqdm
+
+from kbgen import load_tensor_tools as ltt
 from scipy.sparse import coo_matrix
 
 
@@ -50,6 +53,7 @@ def extract_entity_types(graph: Graph) -> Dict[str, int]:
             entity_type_to_id[object] = entity_type_id
             entity_type_id += 1
 
+    print("Loading classes...")
     # iterate over all triples that define the classes
     for subject, predicate, object in graph.triples((None, RDF.type, OWL.Class)):
         # if the class hasn't been seen yet, add it to the type dictionary with a unique id
@@ -57,6 +61,7 @@ def extract_entity_types(graph: Graph) -> Dict[str, int]:
             entity_type_to_id[subject] = entity_type_id
             entity_type_id += 1
 
+    print("Loading subclasses...")
     # iterate over all triples that define subclasses
     for subject, predicate, object in graph.triples((None, RDFS.subClassOf, None)):
         # if the subclass hasn't been seen yet, add it to the type dictionary with a unique id
@@ -78,7 +83,7 @@ def extract_entities(graph: Graph, entity_type_to_id: Dict[str, int]) -> Dict[st
     identifiers.
     :param graph: the graph object of the Knowledge Graph
     :param entity_type_to_id: the dictionary of the entity types and their unique identifies
-    :return: a dictionary of entity types pointing to their id
+    :return: a dictionary of entities pointing to their id
     """
     # dictionary of all subjects that are not types (entities)
     # contains tuples of (entity, entity_id)
@@ -118,6 +123,7 @@ def extract_properties(graph: Graph, entity_to_id: Dict[str, int]) -> Dict[str, 
                 property_to_id[predicate] = predicate_id
                 predicate_id += 1
 
+    print("Iterating over OWL.ObjectProperty...")
     # iterate over all triples that define the subject as an object property
     for subject, predicate, object in graph.triples((None, OWL.ObjectProperty, None)):
         # if the object property hasn't been seen as a predicate yet, add it to the predicate dictionary with a new id
@@ -141,11 +147,11 @@ def create_property_adjacency_matrices(graph: Graph,
     with the unique identifier i
     """
     print("Allocating adjacency matrices...")
-    data_coo = [{"rows": [], "cols": [], "vals": []}] * len(property_to_id)
+    data_coo = [{"rows": [], "cols": [], "vals": []} for _ in range(len(property_to_id))]
 
     print("Populating adjacency matrices...")
     # iterate over every triple that defines a relationship (object property) between two subjects
-    for subject, predicate, object in graph.triples((None, None, None)):
+    for subject, predicate, object in tqdm(graph):
         if subject in entity_to_id and object in entity_to_id and predicate in property_to_id:
             # unique ids of the subject, predicate and object
             subject_id = entity_to_id[subject]
@@ -157,10 +163,11 @@ def create_property_adjacency_matrices(graph: Graph,
             data_coo[predicate_id]["vals"].append(1)
             # data[p_i][s_i,o_i] = 1
 
+    print("Splitting adjacency into separate matrices...")
     # create sparse matrices for every object property by aggregating (row, column, value) tuples
     # these tuples have the values: (subject_id, object_id, 1)
     return [coo_matrix((p["vals"], (p["rows"], p["cols"])), shape=(len(entity_to_id), len(entity_to_id))) for p in
-            data_coo]
+            tqdm(data_coo)]
 
 
 def create_entity_type_adjacency_matrix(graph: Graph,
@@ -194,6 +201,7 @@ def create_entity_type_adjacency_matrix(graph: Graph,
     typedata = coo_matrix((type_coo["vals"], (type_coo["rows"], type_coo["cols"])),
                           shape=(len(entity_to_id), len(entity_type_to_id)),
                           dtype=int)
+
     print(f"{type_assertions} type assertions loaded...")
     return typedata
 
@@ -202,32 +210,62 @@ def main():
     args = cli_args()
     print(args)
 
-    # load the graph and extract entities, entity types and object properties
-    graph, rdf_format = load_graph(args.input)
-    entity_type_to_id = extract_entity_types(graph)
-    entity_to_id = extract_entities(graph, entity_type_to_id)
-    property_to_id = extract_properties(graph, entity_to_id)
+    rdf_format = args.input[args.input.rindex(".") + 1:]
+    input_dir = args.input.replace(f".{rdf_format}", "")
+    Path(input_dir).mkdir(exist_ok=True)
 
-    # build adjacency matrices for all relations (object properties and type relations) in the graph
-    property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
-    entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
+    # load the graph and extract entities, entity types and object properties
+    try:
+        graph, rdf_format = ltt.load_graph_binary(input_dir)
+    except FileNotFoundError:
+        print("File does not exist. Loading graph from input data...")
+        graph, rdf_format = load_graph(args.input)
+        ltt.save_graph_binary(input_dir, graph)
+
+    try:
+        entity_type_to_id = ltt.load_types_dict(input_dir)
+    except FileNotFoundError:
+        entity_type_to_id = extract_entity_types(graph)
+        ltt.save_types_dict(input_dir, entity_type_to_id)
+
+    try:
+        entity_to_id = ltt.load_entities_dict(input_dir)
+    except FileNotFoundError:
+        entity_to_id = extract_entities(graph, entity_type_to_id)
+        ltt.save_entities_dict(input_dir, entity_to_id)
+
+    try:
+        property_to_id = ltt.load_relations_dict(input_dir)
+    except FileNotFoundError:
+        property_to_id = extract_properties(graph, entity_to_id)
+        ltt.save_relations_dict(input_dir, property_to_id)
+
+    if Path(ltt.graph_npz_dir(input_dir)).exists():
+        property_adjaceny_matrices = ltt.load_graph_npz(input_dir)
+    else:
+        # build adjacency matrices for all relations (object properties and type relations) in the graph
+        property_adjaceny_matrices = create_property_adjacency_matrices(graph, entity_to_id, property_to_id)
+        ltt.save_graph_npz(input_dir, property_adjaceny_matrices)
+
+    try:
+        entity_type_adjacency_matrix = ltt.load_types_npz(input_dir)
+    except FileNotFoundError:
+        entity_type_adjacency_matrix = create_entity_type_adjacency_matrix(graph, entity_to_id, entity_type_to_id)
+        ltt.save_types_npz(input_dir, entity_type_adjacency_matrix)
 
     # DAG of the entity type/class hierarchy
-    entity_type_hierarchy_dag = get_type_dag(graph, entity_type_to_id)
+    try:
+        entity_type_hierarchy_dag = ltt.load_type_hierarchy(input_dir)
+    except FileNotFoundError:
+        entity_type_hierarchy_dag = ltt.get_type_dag(graph, entity_type_to_id)
+        ltt.save_type_hierarchy(input_dir, entity_type_hierarchy_dag)
+
     # DAG of the object property hierarchy
-    object_property_hierarchy_dag = get_prop_dag(graph, property_to_id)
-
-    # Replace the DAG nodes with the ids of the entity types they represent to avoid recursion errors when pickling the
-    # graph
-    for entity_type_id, entity_type_dag_node in entity_type_hierarchy_dag.items():
-        entity_type_dag_node.children = [child.node_id for child in entity_type_dag_node.children]
-        entity_type_dag_node.parents = [parent.node_id for parent in entity_type_dag_node.parents]
-
-    # Replace the DAG nodes with the ids of the properties they represent to avoid recursion errors when pickling the
-    # graph
-    for property_id, property_dag_node in object_property_hierarchy_dag.items():
-        property_dag_node.children = [child.node_id for child in property_dag_node.children]
-        property_dag_node.parents = [parent.node_id for parent in property_dag_node.parents]
+    try:
+        object_property_hierarchy_dag = ltt.load_prop_hierarchy(input_dir)
+    except FileNotFoundError:
+        object_property_hierarchy_dag = ltt.get_prop_dag(graph, property_to_id)
+        ltt.save_prop_hierarchy(input_dir, object_property_hierarchy_dag)
 
     num_entity_types = len(entity_type_to_id or {})
     num_entity_types_in_hierarchy = len(entity_type_hierarchy_dag or {})
@@ -240,29 +278,25 @@ def main():
           f"contained in the hierarchy graph...")
 
     # explanation of domains and ranges: https://stackoverflow.com/a/9066520
-    domains = get_domains(graph, property_to_id, entity_type_to_id)
-    print(f"Loaded {len(domains)} relation domains...")
+    try:
+        domains = ltt.load_domains(input_dir)
+    except FileNotFoundError:
+        domains = ltt.get_domains(graph, property_to_id, entity_type_to_id)
+        print(f"Loaded {len(domains)} relation domains...")
+        ltt.save_domains(input_dir, domains)
 
-    ranges = get_ranges(graph, property_to_id, entity_type_to_id)
-    print(f"Loaded {len(ranges)} relation ranges...")
+    try:
+        ranges = ltt.load_ranges(input_dir)
+    except FileNotFoundError:
+        ranges = ltt.get_ranges(graph, property_to_id, entity_type_to_id)
+        print(f"Loaded {len(ranges)} relation ranges...")
+        ltt.save_ranges(input_dir, ranges)
 
-    # TODO: don't know what this is for
-    rdfs = {"type_hierarchy": entity_type_hierarchy_dag,
-            "prop_hierarchy": object_property_hierarchy_dag,
-            "domains": domains,
-            "ranges": ranges}
-
-    # serialize graph as .npz file
-    np.savez(args.input.replace("." + rdf_format, ".npz"),
-             data=property_adjaceny_matrices,  # WARNING: this could be a problem with a huge dataset (e.g., DBpedia)
-             types=entity_type_adjacency_matrix,
-             entities_dict=entity_to_id,
-             relations_dict=property_to_id,
-             types_dict=entity_type_to_id,
-             type_hierarchy=entity_type_hierarchy_dag,
-             prop_hierarchy=object_property_hierarchy_dag,
-             domains=domains,
-             ranges=ranges)
+    # # TODO: don't know what this is for
+    # rdfs = {"type_hierarchy": entity_type_hierarchy_dag,
+    #         "prop_hierarchy": object_property_hierarchy_dag,
+    #         "domains": domains,
+    #         "ranges": ranges}
 
 
 if __name__ == '__main__':

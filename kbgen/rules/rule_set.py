@@ -1,8 +1,10 @@
+import json
 from typing import Dict, List
 
 from rdflib import URIRef
 
-from rules import Rule
+from .rudik_rule import RudikRule
+from .rule import Rule
 
 
 class RuleSet(object):
@@ -20,6 +22,9 @@ class RuleSet(object):
         # relation type needs to be checked against all the rules in that list)
         self.rules_per_relation: Dict[int, List[Rule]] = {}
 
+        self.fill_rules_per_relation()
+
+    def fill_rules_per_relation(self):
         for rule in self.rules:
             for literal in rule.antecedents:
 
@@ -27,6 +32,16 @@ class RuleSet(object):
                     self.rules_per_relation[literal.relation.id] = []
 
                 self.rules_per_relation[literal.relation.id].append(rule)
+
+    def contains_negative_rules(self):
+        for rule in self.rules:
+            if rule.is_negative():
+                return True
+        return False
+
+    def to_rudik(self):
+        self.rules = [rule.to_rudik() for rule in self.rules]
+        self.fill_rules_per_relation()
 
     @classmethod
     def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
@@ -45,5 +60,18 @@ class RuleSet(object):
                     rule = Rule.parse_amie(line, relation_to_id)
                     if rule is not None:
                         rules.append(rule)
+        print(f"Rules successfully parsed: {len(rules)}...")
+        return cls(rules)
+
+    @classmethod
+    def parse_rudik(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
+        parsed_file = json.load(open(rules_path, "r", encoding="utf-8"))
+        rules = []
+        for rule_dict in parsed_file:
+            try:
+                rule = RudikRule.parse_rudik(rule_dict, relation_to_id)
+                rules.append(rule)
+            except RuntimeError as e:
+                print(e)
         print(f"Rules successfully parsed: {len(rules)}...")
         return cls(rules)

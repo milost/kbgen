@@ -2,7 +2,8 @@ from typing import List, Tuple
 
 import numpy as np
 
-from rules import RuleSet, Rule
+from .rule import Rule
+from .rule_set import RuleSet
 
 
 class RuleSetStats(RuleSet):

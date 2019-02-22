@@ -1,7 +1,9 @@
-from typing import Dict, Tuple, List, Set
+from typing import Dict, Tuple, List
 
-from load_tensor_tools import loadGraphNpz
-from kb_models.model_m1 import KBModelM1
+from tqdm import tqdm
+
+from ..load_tensor_tools import load_graph_npz
+from .model_m1 import KBModelM1
 from rdflib import Graph
 from scipy.sparse import csr_matrix
 
@@ -207,7 +209,7 @@ class KBModelM2(KBModelM1):
         :return: an M2 model generated from the tensor file and M1 model
         """
         # the list of adjacency matrices of the object property relations created in load_tensor
-        relation_adjaceny_matrices = loadGraphNpz(input_path)
+        relation_adjaceny_matrices = load_graph_npz(input_path)
 
         # dictionary pointing from a relation id to the functionality score
         # this functionality score is the average number of outgoing edges an entity has of this relation type given
@@ -242,7 +244,10 @@ class KBModelM2(KBModelM1):
         # the index of each matrix is the id of the relation type
         # the rows of each matrix contain the ids of the subject of the relation
         # the columns of each matrix contain the ids of the object of the relation
-        for relation_id, adjacency_matrix in enumerate(relation_adjaceny_matrices):
+        print(f"Learning advanced relation distributions...")
+        for relation_id in tqdm(range(len(relation_adjaceny_matrices))):
+            adjacency_matrix = relation_adjaceny_matrices[relation_id]
+
             # how often an entity id appears as subject in a relation
             # axis = 1 sums the row values
             subject_frequencies = csr_matrix(adjacency_matrix.sum(axis=1))

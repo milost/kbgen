@@ -9,10 +9,9 @@ class MultiType(object):
         return self.types == other.types
 
     def __hash__(self):
-        h = 1
-        for t in self.types:
-            h *= t
-        return int(h)
+        return hash(sum([hash(subtype) for subtype in self.types]))
 
     def __str__(self):
         return str(self.types)
+
+    __repr__ = __str__

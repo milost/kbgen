@@ -1,10 +1,11 @@
+import json
 import re
 from typing import Dict, Optional, List, Tuple
 
 from rdflib import URIRef, Graph
 
-from rules import Literal
-from util_models import URIRelation
+from .literal import Literal
+from ..util_models import URIRelation
 
 
 class Rule(object):
@@ -125,6 +126,55 @@ class Rule(object):
             patterns = patterns.replace(matched_literal_object, object_entity)
 
         return patterns, matched_literal
+
+    def to_dict(self) -> dict:
+        return {
+            "pattern": self.full_query_pattern()
+        }
+
+    def to_rudik(self):
+        # this can't be a top level import since that will cause circular imports
+        from .rudik_rule import RudikRule
+        conclusion_literal = self.consequents[0]
+        id_to_role = {
+            str(conclusion_literal.literal_subject): "subject",
+            str(conclusion_literal.literal_object): "object"
+        }
+
+        def convert_param(param: str):
+            if param not in id_to_role:
+                v_index = len(id_to_role) - 2
+                id_to_role[param] = f"v{v_index}"
+            return id_to_role[param]
+
+        def convert_literal(literal: Literal) -> dict:
+            subject_param = str(literal.literal_subject)
+            subject_param = convert_param(subject_param)
+
+            predicate = str(literal.relation)
+            object_param = str(literal.literal_object)
+            object_param = convert_param(object_param)
+
+            return {
+                "subject": subject_param,
+                "predicate": predicate,
+                "object": object_param
+            }
+
+        rudik_premise = [convert_literal(literal) for literal in self.antecedents]
+        rudik_conclusion = convert_literal(conclusion_literal)
+        hashcode = hash(json.dumps(rudik_premise) + json.dumps(rudik_conclusion))
+
+        return RudikRule(premise=self.antecedents,
+                         conclusion=self.consequents,
+                         rudik_premise=rudik_premise,
+                         rudik_conclusion=rudik_conclusion,
+                         hashcode=hashcode,
+                         rule_type=True,
+                         graph_iri=None)
+
+    def is_negative(self):
+        return False
 
     def produce(self,
                 graph: Graph,

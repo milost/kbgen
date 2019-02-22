@@ -3,7 +3,7 @@ from typing import Optional, Dict
 
 from rdflib import URIRef
 
-from util_models import URIRelation
+from ..util_models import URIRelation
 
 
 class Literal(object):
@@ -111,3 +111,42 @@ class Literal(object):
 
         return Literal(relation_id, literal_subject_id, literal_object_id, relation_to_id)
 
+    @staticmethod
+    def parse_rudik(literal_triple: Dict[str, str],
+                    relation_to_id: Dict[URIRef, int],
+                    graph_iri: str) -> 'Literal':
+        relation_str = literal_triple["predicate"]
+        # TODO: handle the predicate if it's a simple comparison (e.g., <, >, <=, >=)
+        if graph_iri and graph_iri not in relation_str:
+            raise RuntimeError(f"Can't parse literal with not yet supported comparison {relation_str}")
+
+        relation = URIRef(relation_str)
+        if relation not in relation_to_id:
+            raise RuntimeError(f"Can't parse literal with unknown relation {relation}")
+
+        relation_id = relation_to_id[relation]
+
+        identifier_to_id = {"subject": 1, "object": 2}
+        # the v parameters start with v0 while the resulting id of v0 should be 3 (= 0 + 3)
+        v_parameter_offset = 3
+        subject_str = literal_triple["subject"]
+        if graph_iri and graph_iri in subject_str:
+            # TODO: handle literal subject (i.e., dbpedia uri)
+            raise RuntimeError(f"Can't parse literal with literal subject {subject_str}")
+
+        if subject_str in identifier_to_id:
+            subject_id = identifier_to_id[subject_str]
+        else:
+            subject_id = int(subject_str[1:]) + v_parameter_offset
+
+        object_str = literal_triple["object"]
+        if graph_iri and graph_iri in object_str:
+            # TODO: handle literal object (i.e., dbpedia uri)
+            raise RuntimeError(f"Can't parse literal with literal object {object_str}")
+
+        if object_str in identifier_to_id:
+            object_id = identifier_to_id[object_str]
+        else:
+            object_id = int(object_str[1:]) + v_parameter_offset
+
+        return Literal(relation_id, subject_id, object_id, relation_to_id)

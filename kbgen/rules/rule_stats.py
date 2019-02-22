@@ -4,7 +4,8 @@ from typing import Dict, List
 
 from rdflib import URIRef
 
-from rules import Literal, Rule
+from .literal import Literal
+from .rule import Rule
 
 
 class RuleStats(Rule):
