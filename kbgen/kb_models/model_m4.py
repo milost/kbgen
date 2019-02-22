@@ -27,8 +27,21 @@ class KBModelM4(KBModelM3):
         self.rules_to_correctness_ratio: Dict[Rule, float] = {}
         self.oracle: Oracle = None
 
+    def get_confidence(self, target_confidence: float = None):
+        """
+        The confidence should be between 65% and 92%.
+        :return: a confidence in the defined range
+        """
+        if target_confidence and 0.65 <= target_confidence <= 92:
+            return target_confidence
+
+        confidence_range = 0.92 - 0.65
+        scale = 1.0 / confidence_range
+        confidence = random.random() / scale
+        return confidence + 0.65
+
     def break_rule(self, graph: Graph, rule: Rule, target_confidence: float = None) -> None:
-        target_confidence = target_confidence or random.random() / 2.0 + 0.5
+        target_confidence = self.get_confidence(target_confidence)
         self.logger.info(f"Breaking rule {rule} with factor {target_confidence}")
 
         if rule not in self.facts_to_correctness:

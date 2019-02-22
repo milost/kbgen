@@ -84,7 +84,6 @@ def main():
         graph = synthesizer.synthesize(size=args.size)
     else:
         graph = model.synthesize(size=args.size, number_of_entities=args.nentities, number_of_edges=args.nfacts, debug=args.debug)
-    print()
     print(f"Synthesized graph contains {len(graph)} triples")
 
     print("Replacing ids with uris...")
