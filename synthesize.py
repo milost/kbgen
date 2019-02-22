@@ -3,6 +3,7 @@ from argparse import ArgumentParser, Namespace
 from typing import Dict
 
 from rdflib import Graph, URIRef
+from tqdm import tqdm
 
 from kbgen import KBModelM3
 from kbgen.kb_models import KBModelM1
@@ -61,7 +62,7 @@ def replace_id_with_name(graph: Graph, model: KBModelM1) -> Graph:
     graph_with_names = Graph()
     name_replacer = URINameReplacer(model)
 
-    for subject_uri, predicate_uri, object_uri in graph.triples((None, None, None)):
+    for subject_uri, predicate_uri, object_uri in tqdm(graph):
         subject_with_name = name_replacer.replace_name(subject_uri)
         relation_with_name = name_replacer.replace_name(predicate_uri)
         object_with_name = name_replacer.replace_name(object_uri)
