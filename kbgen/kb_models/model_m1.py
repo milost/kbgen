@@ -646,7 +646,7 @@ class KBModelM1(KBModel):
 
 
     @staticmethod
-    def extract_relation_distribution(relation_adjacency_matrices: List[coo_matrix], entity_types: csr_matrix):
+    def extract_relation_distribution(relation_adjacency_matrices: List[coo_matrix], dense_entity_types: np.ndarray):
 
         class MultiTypeIndex(dict):
             def __init__(self, *args):
@@ -664,7 +664,6 @@ class KBModelM1(KBModel):
                 return dict(self)
 
         multitype_index = MultiTypeIndex()
-        dense_entity_types = entity_types.toarray()
 
         # the distribution of subject entity types given the relation (object property)
         # the number of times that an entity type set (multi type) occurred as a subject in a specific relation for
@@ -745,6 +744,7 @@ class KBModelM1(KBModel):
 
         # the entity type adjacency matrix created in load_tensor
         entity_types = load_types_npz(input_path)
+        dense_entity_types = entity_types.toarray()
 
         # the rdf domains and ranges created in load_tensor
         domains = load_domains(input_path)
@@ -776,8 +776,9 @@ class KBModelM1(KBModel):
         # the number of occurrences of every set of entity types that occurs
         # dictionary that points from a multi type (a set of entity types) to its number of occurrences
         entity_type_distribution = {}
-        for entity_type in entity_types:
-            entity_type_set = MultiType(entity_type.indices)
+
+        for entity_type in tqdm(dense_entity_types):
+            entity_type_set = MultiType(entity_type.nonzero()[0])
 
             # add the multi type to the distribution if it is new
             if entity_type_set not in entity_type_distribution:
@@ -792,7 +793,8 @@ class KBModelM1(KBModel):
         relation_distribution = {relation_id: relation_adjacency_matrices[relation_id].nnz
                                  for relation_id in range(len(relation_adjacency_matrices))}
 
-        computed_distributions = KBModelM1.extract_relation_distribution(relation_adjacency_matrices, entity_types)
+        computed_distributions = KBModelM1.extract_relation_distribution(relation_adjacency_matrices,
+                                                                         dense_entity_types)
         domain_distribution, range_distribution, multitype_index = computed_distributions
 
         naive_model = KBModelM1(

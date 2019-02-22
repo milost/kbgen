@@ -2,6 +2,7 @@ from typing import Dict
 
 import numpy as np
 from scipy.sparse import csr_matrix
+from tqdm import tqdm
 
 from kbgen import MultiType
 from ..model_m1 import KBModelM1
@@ -103,8 +104,8 @@ class M1ResultCollector(ResultCollector):
         self.count_facts = 0
 
     def load_data(self):
-        self.entity_types = load_types_npz(self.input_dir)
-        self.dense_entity_types = self.entity_types.toarray()
+        entity_types = load_types_npz(self.input_dir)
+        self.dense_entity_types = entity_types.toarray()
 
         self.domains = load_domains(self.input_dir)
         self.ranges = load_ranges(self.input_dir)
@@ -115,21 +116,17 @@ class M1ResultCollector(ResultCollector):
         self.entity_type_to_id = load_types_dict(self.input_dir)
         self.relation_to_id = load_relations_dict(self.input_dir)
 
-        # compress entity type adjacency matrix if it is not already compressed
-        if not isinstance(self.entity_types, csr_matrix):
-            self.entity_types = self.entity_types.tocsr()
-
         print("Learning entity type distributions...")
         # the entity type adjacency matrix has the dimensions num_entities x num_entity_types
-        self.count_entities = self.entity_types.shape[0]
-        self.count_types = self.entity_types.shape[1]
+        self.count_entities = self.dense_entity_types.shape[0]
+        self.count_types = self.dense_entity_types.shape[1]
 
         # number of different relations (object properties)
         self.count_relations = num_adjacency_matrices(self.input_dir)
 
         self.entity_type_distribution = {}
-        for entity_type in self.entity_types:
-            entity_type_set = MultiType(entity_type.indices)
+        for entity_type in tqdm(self.dense_entity_types):
+            entity_type_set = MultiType(entity_type.nonzero()[0])
 
             # add the multi type to the distribution if it is new
             if entity_type_set not in self.entity_type_distribution:
