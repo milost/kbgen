@@ -122,7 +122,7 @@ def save_prop_hierarchy(input_dir: str, property_hierarchy_dag: Dict[int, DAGNod
 
 def load_entities_dict(input_dir: str) -> Dict[str, int]:
     file = filename(input_dir, "entity_dict")
-    print(f"Loading entity type dict from {file}")
+    print(f"Loading entity dict from {file}")
     entity_to_id: Dict[str, int] = np.load(file).item()
     return entity_to_id
 
@@ -253,14 +253,13 @@ def save_graph_binary(input_dir: str, graph: Graph):
     print("Saved graph.")
 
 
-def load_graph_binary(input_dir: str):
+def load_graph_binary(input_dir: str) -> Graph:
     file = f"{input_dir}/graph.bin"
     print(f"Loading graph from {file}")
     with open(file, "rb") as graph_file:
         graph = pickle.load(graph_file)
     print("Loaded graph.")
-    rdf_format = "ttl"
-    return graph, rdf_format
+    return graph
 
 
 def get_prop_dag(graph: Graph, property_to_id: Dict[str, int]) -> Dict[int, DAGNode]:

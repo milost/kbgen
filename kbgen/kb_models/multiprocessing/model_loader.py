@@ -21,13 +21,10 @@ class ModelLoader(MultiProcessingTask):
         self.process_type: type = None
 
         self.result_collector: ResultCollector = None
-        self.processes: List[LearnProcess] = []
 
-    def _load(self, print_newlines: bool = False, **kwargs):
+    def _load(self, **kwargs):
         """
         Builds a model given that a process type and result collector were set.
-        :param print_newlines: enable this if the processes use tqdm progress bars. If True num_process many newlines
-                               are printed when the task is done so that later output does not appear in the bars
         :return: the built model
         """
         print(self.message)
@@ -56,9 +53,6 @@ class ModelLoader(MultiProcessingTask):
             finished += 1
             if finished == num_relations:
                 break
-
-        # if print_newlines:
-        #     print("\n" * self.num_processes)
 
         # kill processes when we are done
         self.kill_processes()

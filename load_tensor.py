@@ -10,27 +10,28 @@ from tqdm import tqdm
 from kbgen import load_tensor_tools as ltt
 from scipy.sparse import coo_matrix
 
+from kbgen.kb_models.multiprocessing.tensor_loader import TensorLoader
+
 
 def cli_args() -> Namespace:
     parser = ArgumentParser(description="Load tensor from rdf data")
     parser.add_argument("input", type=str, default=None, help="path to dataset on which to perform the evaluation")
-    parser.add_argument("-td", "--typedict", type=str, default=None,
-                        help="path to types dictionary (tensor from which the synthesized data was loaded from)")
+    parser.add_argument("-p", "--num-processes", type=int, default=0, help="the number of processes to use")
     return parser.parse_args()
 
 
-def load_graph(input_file_path: str) -> Tuple[Graph, str]:
+def load_graph(input_file_path: str) -> Graph:
     """
     Loads the RDF graph from a tensor file into a Knowledge Graph.
     :param input_file_path: path to the .n3 file of the RDF data
-    :return: tuple of the created graph object and the format of the rdf file
+    :return: the created graph object
     """
     rdf_format = input_file_path[input_file_path.rindex(".") + 1:]
 
     print("Loading data...")
     graph = Graph()
     graph.parse(input_file_path, format=rdf_format)
-    return graph, rdf_format
+    return graph
 
 
 def extract_entity_types(graph: Graph) -> Dict[str, int]:
@@ -210,16 +211,21 @@ def main():
     args = cli_args()
     print(args)
 
+    if args.num_processes:
+        loader = TensorLoader(args.input, args.num_processes)
+        loader.load_tensor()
+        return
+
     rdf_format = args.input[args.input.rindex(".") + 1:]
     input_dir = args.input.replace(f".{rdf_format}", "")
     Path(input_dir).mkdir(exist_ok=True)
 
     # load the graph and extract entities, entity types and object properties
     try:
-        graph, rdf_format = ltt.load_graph_binary(input_dir)
+        graph = ltt.load_graph_binary(input_dir)
     except FileNotFoundError:
         print("File does not exist. Loading graph from input data...")
-        graph, rdf_format = load_graph(args.input)
+        graph = load_graph(args.input)
         ltt.save_graph_binary(input_dir, graph)
 
     try:
