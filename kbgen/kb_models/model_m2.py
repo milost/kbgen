@@ -59,8 +59,7 @@ class KBModelM2(KBModelM1):
             relation_domain_distribution=m1_model.relation_domain_distribution,
             relation_range_distribution=m1_model.relation_range_distribution,
             relation_to_id=m1_model.relation_to_id,
-            entity_type_to_id=m1_model.entity_type_to_id,
-            multitype_index=m1_model.multitype_index
+            entity_type_to_id=m1_model.entity_type_to_id
         )
 
         self.functionalities = functionalities

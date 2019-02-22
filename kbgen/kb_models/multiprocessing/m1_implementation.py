@@ -75,9 +75,9 @@ class M1ResultCollector(ResultCollector):
     """
     For an in-depth explanation take a loot at the single core implementation in the M1-Model itself.
     """
-    def __init__(self, input_dir: str, multi_type_index: Dict[frozenset, int]):
+    def __init__(self, input_dir: str, multitype_index: Dict[frozenset, int]):
         self.input_dir = input_dir
-        self.multi_type_index = multi_type_index
+        self.multitype_index = multitype_index
 
         # features that will be learned before the multiprocessing
         self.entity_types = None
@@ -145,21 +145,22 @@ class M1ResultCollector(ResultCollector):
         self.relation_range_distribution[relation_id] = result.range_distribution
 
     def build_model(self) -> KBModelM1:
-        return KBModelM1(entity_type_hierarchy=self.entity_type_hierarchy,
-                         object_property_hierarchy=self.object_property_hierarchy,
-                         domains=self.domains,
-                         ranges=self.ranges,
-                         entity_count=self.count_entities,
-                         relation_count=self.count_relations,
-                         edge_count=self.count_facts,
-                         entity_type_count=self.count_types,
-                         entity_type_distribution=self.entity_type_distribution,
-                         relation_distribution=self.relation_distribution,
-                         relation_domain_distribution=self.relation_domain_distribution,
-                         relation_range_distribution=self.relation_range_distribution,
-                         relation_to_id=self.relation_to_id,
-                         entity_type_to_id=self.entity_type_to_id,
-                         multitype_index=self.multi_type_index)
+        model = KBModelM1(entity_type_hierarchy=self.entity_type_hierarchy,
+                          object_property_hierarchy=self.object_property_hierarchy,
+                          domains=self.domains,
+                          ranges=self.ranges,
+                          entity_count=self.count_entities,
+                          relation_count=self.count_relations,
+                          edge_count=self.count_facts,
+                          entity_type_count=self.count_types,
+                          entity_type_distribution=self.entity_type_distribution,
+                          relation_distribution=self.relation_distribution,
+                          relation_domain_distribution=self.relation_domain_distribution,
+                          relation_range_distribution=self.relation_range_distribution,
+                          relation_to_id=self.relation_to_id,
+                          entity_type_to_id=self.entity_type_to_id)
+        model.replace_multitype_indices(self.multitype_index)
+        return model
 
 
 class M1Result(object):

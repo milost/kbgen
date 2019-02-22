@@ -47,7 +47,7 @@ class ModelLoader(MultiProcessingTask):
         self.start_processes()
 
         # parse the results added to the result queue
-        progress_bar = tqdm(total=num_relations, position=0)
+        progress_bar = tqdm(total=num_relations)
         finished = 0
         while True:
             result = result_queue.get(block=True)
@@ -57,8 +57,8 @@ class ModelLoader(MultiProcessingTask):
             if finished == num_relations:
                 break
 
-        if print_newlines:
-            print("\n" * self.num_processes)
+        # if print_newlines:
+        #     print("\n" * self.num_processes)
 
         # kill processes when we are done
         self.kill_processes()

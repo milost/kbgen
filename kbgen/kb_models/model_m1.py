@@ -41,8 +41,7 @@ class KBModelM1(KBModel):
                  relation_domain_distribution: Dict[int, Dict[MultiType, int]],
                  relation_range_distribution: Dict[int, Dict[MultiType, Dict[MultiType, int]]],
                  relation_to_id: Dict[URIRef, int],
-                 entity_type_to_id: Dict[URIRef, int],
-                 multitype_index: Dict[frozenset, int]):
+                 entity_type_to_id: Dict[URIRef, int]):
         """
         Creates an M1 model with the passed data.
         :param entity_type_hierarchy: dictionary pointing from an entity type's id to its DAGNode in the hierarchy of
@@ -72,7 +71,6 @@ class KBModelM1(KBModel):
                                             multi type to the number of occurrences of that object's multi type
         :param relation_to_id: dictionary of the RDF relations and their ids
         :param entity_type_to_id: dictionary of the RDF entity types and their ids
-        :param multitype_index: index pointing from multitype to its index used in the distributions
         """
         super(KBModelM1, self).__init__()
         self.entity_count = entity_count
@@ -93,8 +91,6 @@ class KBModelM1(KBModel):
         self.entity_type_hierarchy = entity_type_hierarchy
         self.object_property_hierarchy = object_property_hierarchy
         self.fix_hierarchies()
-
-        self.replace_multitype_indices(multitype_index)
 
         # used for logging
         self.name = "M1 (NAIVE)"
@@ -813,8 +809,8 @@ class KBModelM1(KBModel):
             relation_domain_distribution=domain_distribution,
             relation_range_distribution=range_distribution,
             relation_to_id=relation_to_id,
-            entity_type_to_id=entity_type_to_id,
-            multitype_index=multitype_index
+            entity_type_to_id=entity_type_to_id
         )
+        naive_model.replace_multitype_indices(multitype_index)
 
         return naive_model
