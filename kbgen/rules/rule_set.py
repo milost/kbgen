@@ -66,6 +66,12 @@ class RuleSet(object):
     @classmethod
     def parse_rudik(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RuleSet':
         parsed_file = json.load(open(rules_path, "r", encoding="utf-8"))
-        rules = [RudikRule.parse_rudik(rule_dict, relation_to_id) for rule_dict in parsed_file]
+        rules = []
+        for rule_dict in parsed_file:
+            try:
+                rule = RudikRule.parse_rudik(rule_dict, relation_to_id)
+                rules.append(rule)
+            except RuntimeError as e:
+                print(e)
         print(f"Rules successfully parsed: {len(rules)}...")
         return cls(rules)

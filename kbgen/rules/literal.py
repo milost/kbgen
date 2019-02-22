@@ -114,13 +114,16 @@ class Literal(object):
     @staticmethod
     def parse_rudik(literal_triple: Dict[str, str],
                     relation_to_id: Dict[URIRef, int],
-                    graph_iri: str) -> Optional['Literal']:
+                    graph_iri: str) -> 'Literal':
         relation_str = literal_triple["predicate"]
         # TODO: handle the predicate if it's a simple comparison (e.g., <, >, <=, >=)
-        # if graph_iri not in relation_str:
-        #     return None
+        if graph_iri and graph_iri not in relation_str:
+            raise RuntimeError(f"Can't parse literal with not yet supported comparison {relation_str}")
 
         relation = URIRef(relation_str)
+        if relation not in relation_to_id:
+            raise RuntimeError(f"Can't parse literal with unknown relation {relation}")
+
         relation_id = relation_to_id[relation]
 
         identifier_to_id = {"subject": 1, "object": 2}
@@ -129,7 +132,8 @@ class Literal(object):
         subject_str = literal_triple["subject"]
         if graph_iri and graph_iri in subject_str:
             # TODO: handle literal subject (i.e., dbpedia uri)
-            return None
+            raise RuntimeError(f"Can't parse literal with literal subject {subject_str}")
+
         if subject_str in identifier_to_id:
             subject_id = identifier_to_id[subject_str]
         else:
@@ -138,7 +142,8 @@ class Literal(object):
         object_str = literal_triple["object"]
         if graph_iri and graph_iri in object_str:
             # TODO: handle literal object (i.e., dbpedia uri)
-            return None
+            raise RuntimeError(f"Can't parse literal with literal object {object_str}")
+
         if object_str in identifier_to_id:
             object_id = identifier_to_id[object_str]
         else:

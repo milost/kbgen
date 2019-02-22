@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from rdflib import URIRef, Graph
 
@@ -56,11 +56,24 @@ class RudikRule(Rule):
         graph_iri = rule_dict["graph_iri"]
         rule_type = rule_dict["rule_type"]
         rudik_premise = rule_dict["premise_triples"]
-        premise = [Literal.parse_rudik(triple, relation_to_id, graph_iri) for triple in rudik_premise]
-        premise = [literal for literal in premise if literal is not None]
         rudik_conclusion = rule_dict["conclusion_triple"]
-        conclusion = Literal.parse_rudik(rudik_conclusion, relation_to_id, graph_iri)
-        assert conclusion is not None, f"Conlusion could not be parsed: {rule_dict}"
+        premise = []
+        errors = []
+        for triple in rudik_premise:
+            try:
+                literal = Literal.parse_rudik(triple, relation_to_id, graph_iri)
+                premise.append(literal)
+            except RuntimeError as e:
+                errors.append(e)
+        try:
+            conclusion = Literal.parse_rudik(rudik_conclusion, relation_to_id, graph_iri)
+        except RuntimeError as e:
+            errors.append(e)
+
+        if errors:
+            error_message = "\n".join([f"\t{error}" for error in errors])
+            raise RuntimeError(f"Dropping rule due to unparseable literals\n{error_message}")
+
         hashcode = rule_dict["hashcode"]
         return cls(premise=premise,
                    conclusion=[conclusion],

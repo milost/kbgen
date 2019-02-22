@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Dict, Optional, List, Tuple
 
@@ -162,12 +163,13 @@ class Rule(object):
 
         rudik_premise = [convert_literal(literal) for literal in self.antecedents]
         rudik_conclusion = convert_literal(conclusion_literal)
+        hashcode = hash(json.dumps(rudik_premise) + json.dumps(rudik_conclusion))
 
         return RudikRule(premise=self.antecedents,
                          conclusion=self.consequents,
                          rudik_premise=rudik_premise,
                          rudik_conclusion=rudik_conclusion,
-                         hashcode=hash(self.full_query_pattern()),
+                         hashcode=hashcode,
                          rule_type=True,
                          graph_iri=None)
 
