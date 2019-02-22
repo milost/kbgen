@@ -9,14 +9,15 @@ cd $dbpedia_dir
 mkdir archives
 for file in *.bz2; do
     echo "Decompressing $file ..."
-    bzip2 -dk file
-    mv file archives
+    bzip2 -dk $file
+    mv $file archives
 done
 
 # remove first and last line of each file
 for file in *.ttl; do
     echo "Cleaning $file ..."
     sed '1d; $d' $file > tmp && mv tmp $file
+    rm tmp
 done
 
 # merge files
@@ -29,4 +30,4 @@ done
 echo "Merged files into $result_file"
 
 # return to original directory
-cd current_dir
+cd $current_dir
