@@ -69,8 +69,7 @@ class ModelLoader(MultiProcessingTask):
         self.message = "Creating MultiType index..."
         self.result_collector = MultiTypeResultCollector(self.input_dir)
         self.process_type = MultiTypeLearnProcess
-        multi_type_index: Dict[frozenset, int] = self._load(dense_entity_types=self.result_collector.dense_entity_types,
-                                                            print_newlines=True)
+        multi_type_index: Dict[frozenset, int] = self._load(dense_entity_types=self.result_collector.dense_entity_types)
 
         self.message = "Learning distributions for M1 model..."
         self.result_collector = M1ResultCollector(self.input_dir, multi_type_index)
