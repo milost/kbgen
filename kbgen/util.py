@@ -5,6 +5,7 @@ import numpy as np
 import logging
 
 from rdflib import Graph
+from tqdm import tqdm
 
 
 def create_logger(level=logging.INFO, name="kbgen", log_to_console=False) -> logging.Logger:
@@ -29,8 +30,9 @@ def dump_tsv(graph: Graph, output_file: str) -> None:
     :param graph: the graph object of the Knowledge Graph
     :param output_file: the file to write to
     """
+    print(f"Saving graph to tsv file {output_file}")
     with codecs.open(output_file, "wb", encoding="utf-8") as file:
-        for subject, predicate, rdf_object in graph:
+        for subject, predicate, rdf_object in tqdm(graph):
             file.write(f"{subject}\t{predicate}\t{rdf_object}\n")
 
 
