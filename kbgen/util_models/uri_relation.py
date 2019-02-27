@@ -6,3 +6,10 @@ class URIRelation(URIEntity):
 
     def __init__(self, entity_id):
         super(URIRelation, self).__init__(entity_id)
+
+    @staticmethod
+    def get_uri(relation):
+        if isinstance(relation, URIRelation):
+            return relation.uri
+        else:
+            return URIRelation(relation).uri
