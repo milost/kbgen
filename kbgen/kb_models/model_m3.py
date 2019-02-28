@@ -42,7 +42,7 @@ class KBModelM3(KBModelM2):
             relation_id_to_distinct_objects=m2_model.relation_id_to_distinct_objects,
             relation_id_to_reflexiveness=m2_model.relation_id_to_reflexiveness
         )
-        self.rules = rules
+        self.rules: RuleSet = rules
         # the maximum number of recursions allowed when checking Horn rules
         self.max_recursion_count = 10
         # whether the "partial completeness assumption:" is used
@@ -187,15 +187,6 @@ class KBModelM3(KBModelM2):
                 if rule.is_negative():
                     continue
 
-                ##### TODO: this as well?
-                # # only adhere to the rule according to its confidence level (i.e. a confidence of 0.5 means that only
-                # # for half of the facts for which the rule would apply it is applied)
-                # rand_number = random.random()
-                # if (
-                #     (self.pca and rand_number < rule.pca_confidence)
-                #     or (not self.pca and rand_number < rule.standard_confidence)
-                # ):
-                #####
                 # measure the time it takes for the rule to produce new facts
                 start_t = datetime.datetime.now()
 
@@ -224,7 +215,7 @@ class KBModelM3(KBModelM2):
                              self.relation_range_distribution_copy[relation_id][subject_type][object_type] > 0)
                     ):
                         # returns True if the fact did not already exist
-                        if self.add_fact(graph, new_fact):
+                        if self.add_fact_check_rules(graph, relation_id, new_fact):
                             rule_added_facts += 1
 
                             # update the distributions and pools after the new fact was added
@@ -790,6 +781,19 @@ class KBModelM3(KBModelM2):
 
         return possible_subject_entities, selected_object_type, possible_object_entities
 
+    def add_fact_check_rules(self, graph: Graph, relation_id: int, fact: Tuple[str, str, str]):
+        # first check against the negative rules if the fact can be added
+        is_valid = True
+        for rule in self.rules.rules_per_relation[relation_id]:
+            if not rule.is_negative():
+                continue
+            new_validity = rule.validate(graph, *fact)
+            if not new_validity:
+                print(f"Removing fact {fact} due to rule {rule}")
+            is_valid = is_valid and new_validity
+
+        return is_valid and self.add_fact(graph, fact)
+
     def synthesize(self,
                    size: float = 1.0,
                    number_of_entities: int = None,
@@ -928,7 +932,9 @@ class KBModelM3(KBModelM2):
 
                                 # continue as long as the fact was not added and the object_offset stays in its bounds
                                 while (
-                                    not self.add_fact(graph, (subject_uri, relation_uri, object_uri))
+                                    not self.add_fact_check_rules(graph,
+                                                                  relation_id,
+                                                                  (subject_uri, relation_uri, object_uri))
                                     and object_offset < len(possible_object_entities)
                                 ):
                                     # try adding the fact with the next possible object
@@ -952,7 +958,9 @@ class KBModelM3(KBModelM2):
 
                                 # continue as long as the fact was not added and the subject_offset stays in its bounds
                                 while (
-                                    not self.add_fact(graph, (subject_uri, relation_uri, object_uri))
+                                    not self.add_fact_check_rules(graph,
+                                                                  relation_id,
+                                                                  (subject_uri, relation_uri, object_uri))
                                     and subject_offset < len(possible_subject_entities)
                                 ):
                                     # try adding fact with the next possible subjects

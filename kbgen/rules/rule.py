@@ -318,6 +318,21 @@ class Rule(object):
 
             return new_facts
 
+    def validate(self,
+                 graph: Graph,
+                 subject_uri: URIRef,
+                 relation_uri: URIRef,
+                 object_uri: URIRef) -> bool:
+        """
+        Produces new facts according to this rule given a new input fact.
+        :param graph: the synthesized graph
+        :param subject_uri: uri of the subject in the new fact
+        :param relation_uri: uri of the relation in the new fact
+        :param object_uri: uri of the object in the new fact
+        :return: a list of facts produced by this rule
+        """
+        raise NotImplementedError
+
     @staticmethod
     def parse_amie(line: str, relation_to_id: Dict[URIRef, int]) -> Optional['Rule']:
         """
