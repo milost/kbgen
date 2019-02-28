@@ -21,8 +21,8 @@ def main():
     with open(args.input, "rb") as graph_file:
         graph: Graph = pickle.load(graph_file)
 
-    print(f"Loading rules from {args.rule_path}")
-    rules = RealWorldRuleSet.parse_rudik(args.rule_path)
+    print(f"Loading rules from {args.rules_path}")
+    rules = RealWorldRuleSet.parse_rudik(args.rules_path)
 
     for rule in rules.rules:
         print(f"Enforcing rule {rule}")

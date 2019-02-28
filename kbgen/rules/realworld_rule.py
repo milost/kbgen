@@ -1,11 +1,9 @@
-import json
 from typing import Optional, List, Tuple, Dict
 
 from rdflib import URIRef, Graph
 from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
-from ..util_models import URIRelation
 
 
 class RealWorldRule(object):
