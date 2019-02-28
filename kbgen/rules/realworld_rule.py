@@ -2,6 +2,7 @@ import json
 from typing import Optional, List, Tuple, Dict
 
 from rdflib import URIRef, Graph
+from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
 from ..util_models import URIRelation
@@ -189,14 +190,16 @@ class RealWorldRule(object):
     def _enforce_single_literal(self, graph: Graph) -> Graph:
         predicate = self.premise[0].relation
         new_triples = []
-        for subject, _, object in graph.triples((None, predicate, None)):
+        print("Producing new triples")
+        for subject, _, object in tqdm(graph.triples((None, predicate, None))):
             new_triples.append(self._produce_fact(subject, object))
-
         print(f"Produced {len(new_triples)} new facts for rule {self}")
+
         graph_size = len(graph)
-        for triple in new_triples:
+        print("Adding new triples to graph")
+        for triple in tqdm(new_triples):
             graph.add(triple)
-        print(f"{len(graph) - graph_size} of these facts were newly added.")
+        print(f"Added {len(graph) - graph_size} new facts")
 
         return graph
 
