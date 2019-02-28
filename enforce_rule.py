@@ -25,10 +25,10 @@ def main():
     rules = RealWorldRuleSet.parse_rudik(args.rules_path)
 
     for rule in rules.rules:
-        print(f"Enforcing rule {rule}")
-        graph = rule.enforce(graph)
+        # print(f"Enforcing rule {rule}")
+        # graph = rule.enforce(graph)
         distribution = rule.get_distribution(graph)
-        print(f"Got distribution {distribution}")
+        print(f"Got distribution for rule {rule}: {distribution}")
 
     # file_ending = args.input[args.input.rindex(".") + 1:]
     # output = f"{args.input[:args.input.rindex('.')]}_enforced.{file_ending}"

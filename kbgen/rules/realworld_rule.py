@@ -213,7 +213,7 @@ class RealWorldRule(object):
         distribution = {}
         for query_object in tqdm(objects):
             triples = graph.triples((None, self.conclusion.relation, query_object))
-            num_founders = len(triples)
+            num_founders = len(list(triples))
             if num_founders not in distribution:
                 distribution[num_founders] = 0
             distribution[num_founders] += 1
@@ -252,7 +252,9 @@ class RealWorldRule(object):
         return cls(premise=premise,
                    conclusion=conclusion,
                    rudik_premise=rudik_premise,
+                   rudik_premise_str=rule_dict["premise"],
                    rudik_conclusion=rudik_conclusion,
+                   rudik_conclusion_str=rule_dict["conclusion"],
                    hashcode=hashcode,
                    rule_type=rule_type,
                    graph_iri=graph_iri)
