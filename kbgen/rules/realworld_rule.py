@@ -1,11 +1,9 @@
-import json
 from typing import Optional, List, Tuple, Dict
 
 from rdflib import URIRef, Graph
 from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
-from ..util_models import URIRelation
 
 
 class RealWorldRule(object):
@@ -177,15 +175,15 @@ class RealWorldRule(object):
                 f"in rule {self}"
             return subject_uri, predicate, object_uri
 
-    def enforce(self, graph: Graph):
+    def enforce(self, graph: Graph) -> Graph:
         if self.rule_type:
-            self._enforce_positive(graph)
+            return self._enforce_positive(graph)
         else:
-            self._enforce_negative(graph)
+            return self._enforce_negative(graph)
 
-    def _enforce_positive(self, graph: Graph):
+    def _enforce_positive(self, graph: Graph) -> Graph:
         if len(self.premise) == 1:
-            self._enforce_single_literal(graph)
+            return self._enforce_single_literal(graph)
 
     def _enforce_single_literal(self, graph: Graph) -> Graph:
         predicate = self.premise[0].relation
