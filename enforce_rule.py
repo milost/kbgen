@@ -27,12 +27,14 @@ def main():
     for rule in rules.rules:
         print(f"Enforcing rule {rule}")
         graph = rule.enforce(graph)
+        distribution = rule.get_distribution(graph)
+        print(f"Got distribution {distribution}")
 
-    file_ending = args.input[args.input.rindex(".") + 1:]
-    output = f"{args.input[:args.input.rindex('.')]}_enforced.{file_ending}"
-    print(f"Saving graph to {output}")
-    with open(output, "wb") as graph_file:
-        pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
+    # file_ending = args.input[args.input.rindex(".") + 1:]
+    # output = f"{args.input[:args.input.rindex('.')]}_enforced.{file_ending}"
+    # print(f"Saving graph to {output}")
+    # with open(output, "wb") as graph_file:
+    #     pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == '__main__':

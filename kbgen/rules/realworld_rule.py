@@ -204,6 +204,21 @@ class RealWorldRule(object):
     def _enforce_negative(self, graph: Graph):
         raise NotImplementedError
 
+    def get_distribution(self, graph: Graph):
+        print("Gathering objects")
+        objects = set()
+        for _, _, object in tqdm(graph.triples((None, self.premise[0].relation, None))):
+            objects.add(object)
+        print("Building distribution")
+        distribution = {}
+        for query_object in tqdm(objects):
+            triples = graph.triples((None, self.conclusion.relation, query_object))
+            num_founders = len(triples)
+            if num_founders not in distribution:
+                distribution[num_founders] = 0
+            distribution[num_founders] += 1
+        return distribution
+
     @staticmethod
     def parse_amie(line: str) -> 'RealWorldRule':
         raise NotImplementedError

@@ -4,8 +4,6 @@ from typing import Dict, List
 from rdflib import URIRef
 
 from .realworld_rule import RealWorldRule
-from .rudik_rule import RudikRule
-from .rule import Rule
 
 
 class RealWorldRuleSet(object):
