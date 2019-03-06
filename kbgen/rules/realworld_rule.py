@@ -58,6 +58,8 @@ class RealWorldRule(object):
     def __str__(self):
         return self._to_rudik_str()
 
+    __repr__ = __str__
+
     def full_query_pattern(self) -> str:
         query_pattern = ""
         for literal in self.premise:
@@ -151,6 +153,12 @@ class RealWorldRule(object):
         return self.rule_type
 
     def _produce_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
+        if len(self.premise) > 1:
+            return self._produce_multi_literal_fact(subject_uri, object_uri)
+        else:
+            return self._produce_single_literal_fact(subject_uri, object_uri)
+
+    def _produce_single_literal_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
         """
         Given the subject and object URI of the premise produce a new fact (i.e., in a positive rule). The purpose
         of this method is to find out the order of premise subject and object in the conclusion.
@@ -158,8 +166,6 @@ class RealWorldRule(object):
         :param object_uri: the object in the premise
         :return: the new fact that is produced by this rule
         """
-        assert len(self.premise) == 1, "Its currently only possilbe to produce facts for rules with a single literals" \
-                                       " in the premise."
         predicate = self.conclusion.relation
         premise = self.premise[0]
         if premise.is_literal_subject or premise.is_literal_object:
@@ -174,6 +180,9 @@ class RealWorldRule(object):
                     and premise.object_id == self.conclusion.object_id), f"Subject and object ids don't match " \
                 f"in rule {self}"
             return subject_uri, predicate, object_uri
+
+    def _produce_multi_literal_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
+        return subject_uri, self.conclusion.relation, object_uri
 
     def enforce(self, graph: Graph) -> Graph:
         if self.rule_type:
@@ -191,6 +200,26 @@ class RealWorldRule(object):
         print("Producing new triples")
         for subject, _, object in tqdm(graph.triples((None, predicate, None))):
             new_triples.append(self._produce_fact(subject, object))
+        print(f"Produced {len(new_triples)} new facts for rule {self}")
+
+        graph_size = len(graph)
+        print("Adding new triples to graph")
+        for triple in tqdm(new_triples):
+            graph.add(triple)
+        print(f"Added {len(graph) - graph_size} new facts")
+
+        return graph
+
+    def _enforce_multi_literal(self, graph: Graph) -> Graph:
+        query = self.full_query_pattern()
+        print(f"Query for {self}: {query}")
+        result = graph.query(query)
+
+        new_triples = []
+        print("Producing new triples")
+        for subject, object in tqdm(result):
+            fact = self._produce_fact(subject, object)
+            new_triples.append(fact)
         print(f"Produced {len(new_triples)} new facts for rule {self}")
 
         graph_size = len(graph)
