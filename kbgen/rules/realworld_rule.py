@@ -242,6 +242,33 @@ class RealWorldRule(object):
         query = self.full_query_pattern(include_conclusion=True)
         print(f"Query for positive facts: {query}")
         result = list(graph.query(query))
+        # TODO
+
+    def break_randomly(self, graph: Graph, break_chance: float):
+        query = self.full_query_pattern(include_conclusion=True)
+        print(f"Query for {self}: {query}")
+        result = list(graph.query(query))
+
+        positive_facts = set(result)
+        all_facts = list(graph.query(self.full_query_pattern()))
+
+        # how many facts are true (in the ground truth)
+        correctness_ratio = len(positive_facts) / len(all_facts)
+        # how many facts we break as noise
+        brokenness_ratio = 0
+        facts_to_correctness = {self._produce_fact(fact[0], fact[1]): fact in positive_facts for fact in all_facts}
+
+        for person, film in tqdm(result):
+            number = random.random()
+            if number < break_chance:
+                fact = self._produce_fact(person, film)
+                graph.remove(fact)
+                brokenness_ratio += 1
+
+        brokenness_ratio /= len(all_facts)
+        oracle_data = [facts_to_correctness, correctness_ratio, brokenness_ratio]
+        return graph, oracle_data
+
 
     def break_by_birth_date(self,
                             graph: Graph,
@@ -249,7 +276,6 @@ class RealWorldRule(object):
                             break_chance: float,
                             threshold: datetime.date,
                             less_than: bool = True) -> Tuple[Graph, list]:
-
         query = self.full_query_pattern(include_conclusion=True)
         print(f"Query for {self}: {query}")
         result = list(graph.query(query))
