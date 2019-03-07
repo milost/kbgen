@@ -76,7 +76,7 @@ def main():
     graph = load_yago_core(args.core, graph)
     graph = load_birth_dates(args.birth_dates, graph)
 
-    output = f"yago/graph.bin"
+    output = f"yago2_default/graph.bin"
     print(f"Saving graph to {output}")
     with open(output, "wb") as graph_file:
         pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
