@@ -1,6 +1,8 @@
+import datetime
+import random
 from typing import Optional, List, Tuple, Dict
 
-from rdflib import URIRef, Graph
+from rdflib import URIRef, Graph, Literal
 from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
@@ -60,10 +62,13 @@ class RealWorldRule(object):
 
     __repr__ = __str__
 
-    def full_query_pattern(self) -> str:
+    def full_query_pattern(self, include_conclusion: bool = False) -> str:
         query_pattern = ""
         for literal in self.premise:
             query_pattern += literal.sparql_patterns()
+
+        if include_conclusion:
+            query_pattern += self.conclusion.sparql_patterns()
 
         if "?b" not in query_pattern and "?a" not in query_pattern:
             query_projection = "ask "
@@ -231,6 +236,35 @@ class RealWorldRule(object):
 
     def _enforce_negative(self, graph: Graph):
         raise NotImplementedError
+
+    def break_by_birth_date(self,
+                            graph: Graph,
+                            birth_date_relation: URIRef,
+                            break_chance: float,
+                            threshold: datetime.date,
+                            less_than: bool = True):
+
+        query = self.full_query_pattern(include_conclusion=True)
+        print(f"Query for {self}: {query}")
+        result = list(graph.query(query))
+
+        oracle = set(result)
+
+        for person, film in tqdm(result):
+            birth_date_query = list(graph.query((person, birth_date_relation, None)))
+            if not birth_date_query:
+                continue
+            birth_date_literal: Literal = birth_date_query[0][2]
+            if (
+                (less_than and birth_date_literal.value < threshold) or
+                (not less_than and birth_date_literal.value >= threshold)
+            ):
+                number = random.random()
+                if number < break_chance:
+                    fact = self._produce_fact(person, film)
+                    graph.remove(fact)
+
+        return graph, oracle
 
     def get_distribution(self, graph: Graph):
         print("Gathering objects")

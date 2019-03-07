@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Set
 
 from rdflib import Graph, URIRef, Literal
 from tqdm import tqdm
@@ -27,23 +27,23 @@ def query(subject, predicate, object):
     return graph.triples((subject, predicate, object))
 
 
-non_reflexive_spouses: List[Tuple[URIRef, URIRef, URIRef]] = None
+positive_results: List[Tuple[URIRef, URIRef]] = None
 birth_date_uri: URIRef = URIRef('http://dbpedia.org/property/birthDate')
 
 
 def get_person_to_date() -> Dict[URIRef, datetime.date]:
     person_to_date = {}
     all_person = set()
-    for subject, spouse_relation, object in non_reflexive_spouses:
-        for person in [subject, object]:
-            all_person.add(person)
-            for query_result in query(subject, birth_date_uri, None):
-                literal = query_result[2]
-                if isinstance(literal, Literal):
-                    if isinstance(literal.value, int):
-                        person_to_date[person] = datetime.date(year=literal.value, month=1, day=1)
-                    elif isinstance(literal.value, datetime.date):
-                        person_to_date[person] = literal.value
+    for subject, object in positive_results:
+        person = subject
+        all_person.add(person)
+        for query_result in query(subject, birth_date_uri, None):
+            literal = query_result[2]
+            if isinstance(literal, Literal):
+                if isinstance(literal.value, int):
+                    person_to_date[person] = datetime.date(year=literal.value, month=1, day=1)
+                elif isinstance(literal.value, datetime.date):
+                    person_to_date[person] = literal.value
     skipped = len(all_person.difference(person_to_date.keys()))
     print(f"Skipped {skipped} entities since there is no {birth_date_uri} with a literal value.")
     return person_to_date
@@ -91,4 +91,11 @@ def read_yago(file_name: str) -> Graph:
     return graph
 
 
+def get_persons_without_birth_date(persons: Set[URIRef]) -> List[URIRef]:
+    persons_without_date = []
+    for person in persons:
+        query_result = query(person, birth_date_uri, None)
+        if not len(list(query_result)):
+            persons_without_date.append(person)
+    return persons_without_date
 
