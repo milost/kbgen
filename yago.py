@@ -70,11 +70,43 @@ def load_birth_dates(file_name: str, graph: Graph):
     return graph
 
 
+def load_yago_dates(file_name: str, graph: Graph):
+    print(f"Reading yago dates from {file_name}")
+    graph_size = len(graph)
+
+    # get the total number of lines
+    with open(file_name) as yago_file:
+        num_lines = len(yago_file.readlines())
+
+    birth_date_str = "wasBornOnDate"
+    with open(file_name) as yago_file:
+        for line in tqdm(yago_file, total=num_lines):
+            # skip non birth date lines
+            if birth_date_str not in line:
+                continue
+            _, person, predicate, date, _ = line.strip().split("\t")
+            subject = URIRef(clean_uri(person))
+            predicate = URIRef(clean_uri(predicate))
+
+            # remove the data type and quotes from the date value
+            object = "".join([char for char in date if char not in "\"^xsd:date"])
+            object = Literal(clean_uri(object), datatype=XSD.date)
+
+            graph.add((subject, predicate, object))
+    print()
+    print(f"Added {len(graph) - graph_size} date triples to graph")
+    return graph
+
+
 def main():
     args = cli_args()
     graph = Graph()
     graph = load_yago_core(args.core, graph)
-    graph = load_birth_dates(args.birth_dates, graph)
+    date_file = args.birth_dates
+    if "yago3_full" in date_file:
+        graph = load_yago_dates(date_file, graph)
+    else:
+        graph = load_birth_dates(date_file, graph)
 
     output = f"yago2_default/graph.bin"
     print(f"Saving graph to {output}")

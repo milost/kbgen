@@ -18,7 +18,7 @@ def cli_args() -> Namespace:
     return parser.parse_args()
 
 
-def save_mangled_graph(graph: Graph, oracle: RealWorldOracle, input_file: Path):
+def save_mangled_graph(graph: Graph, oracle: RealWorldOracle, input_file: Path, filter_literals: bool = True):
     oracle_output = f"{input_file.parent}/{input_file.stem}_mangled_oracle.json"
     print(f"Saving graph to {oracle_output}")
     oracle.to_json(open(oracle_output, "w"))
@@ -32,7 +32,7 @@ def save_mangled_graph(graph: Graph, oracle: RealWorldOracle, input_file: Path):
     print(f"Saving graph to {tsv_output}")
     with open(tsv_output, "w") as file:
         for subject, predicate, object in tqdm(graph):
-            if not isinstance(object, Literal):
+            if not (isinstance(object, Literal) and filter_literals):
                 line = str(subject) + "\t" + str(predicate) + "\t" + str(object)
                 file.write(f"{line}\n")
 
