@@ -79,12 +79,13 @@ def load_yago_dates(file_name: str, graph: Graph):
         num_lines = len(yago_file.readlines())
 
     birth_date_str = "wasBornOnDate"
+    num_unparseable_dates = 0
     with open(file_name) as yago_file:
         for line in tqdm(yago_file, total=num_lines):
             # skip non birth date lines
             if birth_date_str not in line:
                 continue
-            _, person, predicate, date, _ = line.strip().split("\t")
+            _, person, predicate, date = line.strip().split("\t")[:4]
             subject = URIRef(clean_uri(person))
             predicate = URIRef(clean_uri(predicate))
 
@@ -92,9 +93,15 @@ def load_yago_dates(file_name: str, graph: Graph):
             object = "".join([char for char in date if char not in "\"^xsd:date"])
             object = Literal(clean_uri(object), datatype=XSD.date)
 
+            # rdflib couldn't parse the date (i.e., negative dates)
+            if object.value is None:
+                num_unparseable_dates += 1
+                continue
+
             graph.add((subject, predicate, object))
     print()
     print(f"Added {len(graph) - graph_size} date triples to graph")
+    print(f"Skipped {num_unparseable_dates} dates due to parsing errors")
     return graph
 
 
