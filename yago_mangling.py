@@ -19,7 +19,7 @@ def cli_args() -> Namespace:
 
 
 def save_mangled_graph(graph: Graph, oracle: RealWorldOracle, input_file: Path):
-    oracle_output = f"{input_file.parent}/{input_file.stem}_oracle.json"
+    oracle_output = f"{input_file.parent}/{input_file.stem}_mangled_oracle.json"
     print(f"Saving graph to {oracle_output}")
     oracle.to_json(open(oracle_output, "w"))
 
