@@ -251,7 +251,7 @@ class RealWorldRule(object):
         oracle = set(result)
 
         for person, film in tqdm(result):
-            birth_date_query = list(graph.query((person, birth_date_relation, None)))
+            birth_date_query = list(graph.triples((person, birth_date_relation, None)))
             if not birth_date_query:
                 continue
             birth_date_literal: Literal = birth_date_query[0][2]
