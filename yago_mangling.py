@@ -32,7 +32,7 @@ def save_mangled_graph(graph: Graph,
     print(f"Saving graph to {oracle_output}")
     oracle.to_json(open(oracle_output, "w"))
 
-    pickle_output = f"{input_file.parent}/{input_file.stem}{suffix}{input_file.suffix}"
+    pickle_output = f"{input_file.parent}/{input_file.stem}_{suffix}{input_file.suffix}"
     print(f"Saving graph to {pickle_output}")
     with open(pickle_output, "wb") as graph_file:
         pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
