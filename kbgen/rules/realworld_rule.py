@@ -153,10 +153,10 @@ class RealWorldRule(object):
         return self.rule_type
 
     def _produce_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
-        if len(self.premise) > 1:
-            return self._produce_multi_literal_fact(subject_uri, object_uri)
-        else:
+        if len(self.premise) == 1:
             return self._produce_single_literal_fact(subject_uri, object_uri)
+        else:
+            return subject_uri, self.conclusion.relation, object_uri
 
     def _produce_single_literal_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
         """
@@ -180,9 +180,6 @@ class RealWorldRule(object):
                     and premise.object_id == self.conclusion.object_id), f"Subject and object ids don't match " \
                 f"in rule {self}"
             return subject_uri, predicate, object_uri
-
-    def _produce_multi_literal_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
-        return subject_uri, self.conclusion.relation, object_uri
 
     def enforce(self, graph: Graph) -> Graph:
         if self.rule_type:
@@ -210,7 +207,7 @@ class RealWorldRule(object):
 
         return graph
 
-    def _enforce_multi_literal(self, graph: Graph) -> Graph:
+    def _enforce_multi_literal(self, graph: Graph, reflexiveness: bool = False) -> Graph:
         query = self.full_query_pattern()
         print(f"Query for {self}: {query}")
         result = graph.query(query)
@@ -218,6 +215,8 @@ class RealWorldRule(object):
         new_triples = []
         print("Producing new triples")
         for subject, object in tqdm(result):
+            if not reflexiveness and subject == object:
+                continue
             fact = self._produce_fact(subject, object)
             new_triples.append(fact)
         print(f"Produced {len(new_triples)} new facts for rule {self}")
@@ -248,9 +247,14 @@ class RealWorldRule(object):
             distribution[num_founders] += 1
         return distribution
 
-    @staticmethod
-    def parse_amie(line: str) -> 'RealWorldRule':
-        raise NotImplementedError
+    def evaluate_rule(self, graph: Graph, reflexiveness: bool = False):
+        result = list(graph.query(self.full_query_pattern()))
+        invalid_count = 0
+        for subject, object in tqdm(result):
+            if not reflexiveness and subject == object:
+                continue
+            invalid_count += self._produce_fact(subject, object) not in graph
+        return 1.0 - (invalid_count / len(result))
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
@@ -287,3 +291,50 @@ class RealWorldRule(object):
                    hashcode=hashcode,
                    rule_type=rule_type,
                    graph_iri=graph_iri)
+
+    @classmethod
+    def parse_amie(cls, line: Dict[str, str]) -> 'RealWorldRule':
+        literal_length = 3
+
+        rule_str = line["Rule"]
+        assert "=>" in rule_str, "Rule string does not contain implication arrow (\"=>\")!"
+        premise, conclusion = [string.strip() for string in rule_str.split("=>")]
+
+        conclusion_triple = conclusion.split()
+        assert conclusion_triple[0] == "?a" and conclusion_triple[2] == "?b", f"Conclusion of amie rule {rule_str} " \
+            f"does not have the format ?a predicate ?b"
+        conclusion = RealWorldLiteral.parse_amie(conclusion_triple)
+
+        premise_elements = premise.split()
+        assert len(premise_elements) % literal_length == 0, f"Premise {premise} number of elements is not divisible " \
+            f"by {literal_length}"
+        premise_literals: List[Tuple[str, str, str]] = list(zip(*[iter(premise_elements)] * literal_length))
+        premise = [RealWorldLiteral.parse_amie(literal_triple) for literal_triple in premise_literals]
+
+        id_to_role = {
+            str(conclusion.literal_subject()): "subject",
+            str(conclusion.literal_object()): "object"
+        }
+
+        # serialized rudik format (for later serialization of the rule)
+        rudik_premise = []
+        rudik_premise_str = []
+        for literal in premise:
+            triple, string = literal.serialize_to_rudik(id_to_role)
+            rudik_premise.append(triple)
+            rudik_premise_str.append(string)
+        rudik_premise_str = " & ".join(rudik_premise_str)
+
+        rudik_conclusion, rudik_conclusion_str = conclusion.serialize_to_rudik(id_to_role)
+
+        hashcode = hash(f"{rudik_premise_str} => {rudik_conclusion_str}")
+
+        return cls(premise=premise,
+                   conclusion=conclusion,
+                   rudik_premise=rudik_premise,
+                   rudik_premise_str=rudik_premise_str,
+                   rudik_conclusion=rudik_conclusion,
+                   rudik_conclusion_str=rudik_conclusion_str,
+                   hashcode=hashcode,
+                   rule_type=True,
+                   graph_iri=None)

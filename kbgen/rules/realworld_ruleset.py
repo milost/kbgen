@@ -3,6 +3,7 @@ from typing import Dict, List
 
 from rdflib import URIRef
 
+from kbgen.util import read_csv
 from .realworld_rule import RealWorldRule
 
 
@@ -39,17 +40,24 @@ class RealWorldRuleSet(object):
         return False
 
     @classmethod
-    def parse_amie(cls, rules_path: str, relation_to_id: Dict[URIRef, int]) -> 'RealWorldRuleSet':
-        raise NotImplementedError
-
-    @classmethod
-    def parse_rudik(cls, rules_path: str) -> 'RealWorldRuleSet':
-        parsed_file = json.load(open(rules_path, "r", encoding="utf-8"))
+    def parse_rudik(cls, rule_file: str) -> 'RealWorldRuleSet':
+        parsed_file = json.load(open(rule_file, "r", encoding="utf-8"))
         rules = []
         for rule_dict in parsed_file:
             try:
-                rule = RealWorldRule.parse_rudik(rule_dict)
-                rules.append(rule)
+                rules.append(RealWorldRule.parse_rudik(rule_dict))
+            except RuntimeError as e:
+                print(e)
+        print(f"Rules successfully parsed: {len(rules)}...")
+        return cls(rules)
+
+    @classmethod
+    def parse_amie(cls, rule_file: str) -> 'RealWorldRuleSet':
+        csv_lines = read_csv(rule_file)
+        rules = []
+        for line in csv_lines:
+            try:
+                rules.append(RealWorldRule.parse_amie(line))
             except RuntimeError as e:
                 print(e)
         print(f"Rules successfully parsed: {len(rules)}...")

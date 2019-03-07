@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, Union, Tuple
 
 from rdflib import URIRef
 
@@ -7,6 +7,8 @@ class RealWorldLiteral(object):
     """
     Represents a triple in a rule containing the original URIs instead of ids.
     """
+
+    ascii_offset: int = 96
 
     def __init__(self,
                  subject: Union[URIRef, int],
@@ -65,7 +67,7 @@ class RealWorldLiteral(object):
                 literal = f"<{literal}>"
             return literal
         else:
-            return f"?{chr(self.subject_id + 96)}"
+            return f"?{chr(self.subject_id + self.ascii_offset)}"
 
     def literal_object(self, escape_literal: bool = True) -> str:
         """
@@ -79,11 +81,22 @@ class RealWorldLiteral(object):
                 literal = f"<{literal}>"
             return literal
         else:
-            return f"?{chr(self.object_id + 96)}"
+            return f"?{chr(self.object_id + self.ascii_offset)}"
 
-    @staticmethod
-    def parse_amie(literal_string: str) -> 'RealWorldLiteral':
-        raise NotImplementedError
+    def serialize_to_rudik(self, id_to_role: Dict[str, str]) -> Tuple[Dict[str, str], str]:
+        def convert_param(param: str):
+            if param not in id_to_role:
+                v_index = len(id_to_role) - 2
+                id_to_role[param] = f"v{v_index}"
+            return id_to_role[param]
+
+        triple = {
+            "subject": convert_param(self.literal_subject()),
+            "predicate": str(self.relation),
+            "object": convert_param(self.literal_object())
+        }
+        string = f"{triple['predicate']}({triple['subject']}, {triple['object']})"
+        return triple, string
 
     @classmethod
     def parse_rudik(cls,
@@ -123,3 +136,22 @@ class RealWorldLiteral(object):
             object = int(object_str[1:]) + v_parameter_offset
 
         return cls(subject, relation, object)
+
+    @classmethod
+    def parse_amie(cls, literal_triple: Tuple[str, str, str]) -> 'RealWorldLiteral':
+        subject_str, relation_str, object_str = literal_triple
+
+        dirty_chars = "<>"
+        relation = "".join([char for char in relation_str if char not in dirty_chars])
+
+        if subject_str[0] == "?":
+            subject = ord(subject_str[1]) - cls.ascii_offset
+        else:
+            raise RuntimeError(f"Can't parse AMIE literal with literal subject in {literal_triple}")
+
+        if object_str[0] == "?":
+            object = ord(object_str[1]) - cls.ascii_offset
+        else:
+            raise RuntimeError(f"Can't parse AMIE literal with literal object in {literal_triple}")
+
+        return cls(subject, URIRef(relation), object)

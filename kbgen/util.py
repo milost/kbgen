@@ -1,5 +1,7 @@
 import codecs
-from typing import List, Iterable, ValuesView, Union
+import sys
+from typing import List, Iterable, ValuesView, Union, Set
+import csv
 
 import numpy as np
 import logging
@@ -48,6 +50,30 @@ def normalize(values_view: Union[ValuesView[float], List[float]]) -> Iterable[fl
     np_values = np.array(values).astype(float)
     np_values /= sum(np_values)
     return np_values.tolist()
+
+
+def read_csv(file_name: str,
+             delimiter: str = ",",
+             quotechar: str = '"',
+             has_header: bool = True,
+             columns_to_keep: Set[str] = None) -> list:
+    lines = []
+    csv.field_size_limit(sys.maxsize)
+    with open(file_name, 'r') as file:
+        data: csv.DictReader = csv.reader(file, delimiter=delimiter, quotechar=quotechar)
+        if has_header:
+            header = next(data)
+            for row in data:
+                padded_row = row
+                for _ in range(len(header) - len(row)):
+                    padded_row.append(None)
+                named_row = {name: padded_row[index] for index, name in enumerate(header)}
+                if columns_to_keep:
+                    named_row = {key: value for key, value in named_row.items() if key in columns_to_keep}
+                lines.append(named_row)
+        else:
+            lines = [row for row in data]
+    return lines
 
 
 ################################################################################
