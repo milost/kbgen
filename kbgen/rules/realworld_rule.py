@@ -383,7 +383,7 @@ class RealWorldRule(object):
             else:
                 negative_distribution[all_values[value]] += 1
 
-        return entropy(positive_distribution, negative_distribution)
+        return entropy(positive_distribution, negative_distribution), positive_distribution, negative_distribution
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
