@@ -7,7 +7,7 @@ from rdflib import URIRef, Graph
 from scipy.stats import entropy
 from tqdm import tqdm
 
-from plotly import plotly, figure_factory, graph_objs
+from plotly import plotly, figure_factory, graph_objs, offline
 
 from .realworld_literal import RealWorldLiteral
 
@@ -411,9 +411,13 @@ class RealWorldRule(object):
         layout = graph_objs.Layout(title=f"Frequency distribution for {self}")
         figure = graph_objs.Figure(data=[bar_chart], layout=layout)
 
-        filename = f"freq_dist_{self}"
-        url = plotly.plot(figure_or_data=figure, filename=filename[:min(len(filename), 100)], auto_open=False)
-        print(f"Plotted frequency distribution of {self} to {url}")
+        # filename = f"freq_dist_{self}"
+        # url = plotly.plot(figure_or_data=figure, filename=filename[:min(len(filename), 100)], auto_open=False)
+        # print(f"Plotted frequency distribution of {self} to {url}")
+
+        filename = f"frequency_distribution_{self}.html".replace(" ", "_")
+        offline.plot(figure_or_data=figure, filename=filename, auto_open=False)
+        print(f"Plotted frequency distribution of {self} to {filename}")
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
