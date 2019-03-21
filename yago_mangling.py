@@ -49,18 +49,21 @@ def save_mangled_graph(graph: Graph,
 
 
 def method_for_rule(rule: RealWorldRule):
-    return {
-        "created(subject, object) & produced(subject, object) => directed(subject, object)": {
-            "method": break_by_birth_date,
-            "arguments": {
-                "rule": rule,
-                "birth_date_relation": URIRef("wasBornOnDate"),
-                "comparison_date": datetime.date(year=1950, month=1, day=1),
-                "comparison": operator.lt,
-                "break_chance": 0.7
+    try:
+        return {
+            "created(subject, object) & produced(subject, object) => directed(subject, object)": {
+                "method": break_by_birth_date,
+                "arguments": {
+                    "rule": rule,
+                    "birth_date_relation": URIRef("wasBornOnDate"),
+                    "comparison_date": datetime.date(year=1950, month=1, day=1),
+                    "comparison": operator.lt,
+                    "break_chance": 0.7
+                }
             }
-        }
-    }[rule._to_rudik_str()]
+        }[str(rule)]
+    except KeyError:
+        raise RuntimeError(f"No systematic method for rule {rule}")
 
 
 def break_systematic(graph: Graph, rules: RealWorldRuleSet) -> Tuple[Graph, RealWorldOracle]:
