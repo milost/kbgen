@@ -1,7 +1,9 @@
 import random
+import numpy as np
 from typing import Optional, List, Tuple, Dict
 
 from rdflib import URIRef, Graph
+from scipy.stats import entropy
 from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
@@ -355,6 +357,35 @@ class RealWorldRule(object):
                 continue
             invalid_count += self.produce_fact(subject, object) not in graph
         return 1.0 - (invalid_count / len(result))
+
+    def compare_sample_distributions(self, graph: Graph, subject_property: URIRef):
+        print(f"Comparing distributions for rule {self} with property {subject_property}")
+        all_facts = list(graph.query(self.full_query_pattern()))
+        all_values = set()
+        for subject, _ in all_facts:
+            subject_properties = list(graph.triples((subject, subject_property, None)))
+            # this subject does not have the property
+            if not subject_property:
+                continue
+            all_values.add(subject_properties[0][2])
+
+        all_values = {value: index for index, value in enumerate(sorted(list(all_values)))}
+
+        positive_distribution = np.zeros(shape=[len(all_values)], dtype=np.int64)
+        negative_distribution = np.zeros(shape=[len(all_values)], dtype=np.int64)
+        positive_facts = set(graph.query(self.full_query_pattern(include_conclusion=True)))
+        for subject, object in all_facts:
+            subject_properties = list(graph.triples((subject, subject_property, None)))
+            # this subject does not have the property
+            if not subject_property:
+                continue
+            property_value = subject_properties[0][2]
+            if (subject, object) in positive_facts:
+                positive_distribution[all_values[property_value]] += 1
+            else:
+                negative_distribution[all_values[property_value]] += 1
+
+        return entropy(positive_distribution, negative_distribution)
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
