@@ -114,6 +114,8 @@ def main():
     if args.random:
         graph, oracle = break_randomly(graph, rules, break_chance=0.3)
     else:
+        # first check, that every rule has a systematic method
+        [method_for_rule(rule) for rule in rules.rules]
         graph, oracle = break_systematic(graph, rules)
 
     save_mangled_graph(graph, oracle, input_path, random=args.random)
