@@ -1,6 +1,7 @@
-import datetime
+import operator
 import random
-from typing import Optional, List, Tuple, Dict
+from datetime import date
+from typing import Optional, List, Tuple, Dict, Callable
 
 from rdflib import URIRef, Graph, Literal
 from tqdm import tqdm
@@ -40,6 +41,9 @@ class RealWorldRule(object):
         self.graph_iri: str = graph_iri
 
     def _to_amie_str(self):
+        """
+        Format the rule in the AMIE format: a <relation1> b => b <relation2> a.
+        """
         rule_string = ""
 
         # add premise literals
@@ -55,6 +59,9 @@ class RealWorldRule(object):
         return rule_string
 
     def _to_rudik_str(self):
+        """
+        Format the rule in the AMIE format: relation1(object, subject) => relation2(subject, object)
+        """
         return f"{self.rudik_premise_str} => {self.rudik_conclusion_str}"
 
     def __str__(self):
@@ -63,6 +70,15 @@ class RealWorldRule(object):
     __repr__ = __str__
 
     def full_query_pattern(self, include_conclusion: bool = False) -> str:
+        """
+        Create the SPARQL query pattern to query all tuples that this rule regards. If the conclusion is included, all
+        subject object tuples (of the conclusion) for which the rule is true will be returned by the query. If it isn't
+        included, all subject object tuples for which the premise is true will be returned by the query.
+        :param include_conclusion: if true, only true instances of the rule will be returned by the query. Otherwise,
+                                   all instances for which the premise of the rule is true will be returned by the
+                                   query.
+        :return: the SPARQL of this rule query as a string
+        """
         query_pattern = ""
         for literal in self.premise:
             query_pattern += literal.sparql_patterns()
@@ -87,14 +103,12 @@ class RealWorldRule(object):
         return query_projection + query_pattern
 
     def premise_patterns(self,
-                         graph: Graph,
                          subject_uri: URIRef,
                          relation_uri: URIRef,
                          object_uri: URIRef) -> Tuple[str, Optional[RealWorldLiteral]]:
         """
         Creates the SPARQL pattern to filter the graph according to the premise of this rule (i.e., all literals in the
         premise).
-        :param graph: the synthesized graph
         :param subject_uri: uri of the subject in the new fact
         :param relation_uri: uri of the relation in the new fact
         :param object_uri: uri of the object in the new fact
@@ -157,7 +171,16 @@ class RealWorldRule(object):
     def is_negative(self):
         return self.rule_type
 
-    def _produce_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
+    def produce_fact(self, subject_uri: URIRef, object_uri: URIRef) -> Tuple[URIRef, URIRef, URIRef]:
+        """
+        Produce a fact from a query result instance (tuple of subject and object) with the conclusion relation of this
+        rule.
+        For rules with multiple literals in the premise, the correct order of subject and object is produced by the
+        query. For rules with only a single literal this order has to be determined separately.
+        :param subject_uri: subject that was returned by the query of this rule
+        :param object_uri: object that was returned by the query of this rule
+        :return: the produced fact as triple
+        """
         if len(self.premise) == 1:
             return self._produce_single_literal_fact(subject_uri, object_uri)
         else:
@@ -187,21 +210,41 @@ class RealWorldRule(object):
             return subject_uri, predicate, object_uri
 
     def enforce(self, graph: Graph) -> Graph:
+        """
+        Enforce this rule on the graph, so that each instance for which this rule's premise is true, the conclusion is
+        also true.
+        :param graph: the Graph object in which the rule is enforced
+        :return: the new graph, in which this rule is enforced
+        """
         if self.rule_type:
             return self._enforce_positive(graph)
         else:
             return self._enforce_negative(graph)
 
-    def _enforce_positive(self, graph: Graph) -> Graph:
+    def _enforce_positive(self, graph: Graph, reflexiveness: bool = False) -> Graph:
+        """
+        Enforce this positive rule on the graph.
+        :param graph: the Graph object in which the rule is enforced
+        :param reflexiveness: if True, reflexive edges are also added to the graph
+        :return: the new graph, in which this rule is enforced
+        """
         if len(self.premise) == 1:
             return self._enforce_single_literal(graph)
+        else:
+            return self._enforce_multi_literal(graph, reflexiveness)
 
     def _enforce_single_literal(self, graph: Graph) -> Graph:
+        """
+        For rules with a single literal in the premise, enforcing can be done without queries. A simple contains check
+        of the premise literal is enough.
+        :param graph: the Graph object in which the rule is enforced
+        :return: the new graph, in which this rule is enforced
+        """
         predicate = self.premise[0].relation
         new_triples = []
         print("Producing new triples")
         for subject, _, object in tqdm(graph.triples((None, predicate, None))):
-            new_triples.append(self._produce_fact(subject, object))
+            new_triples.append(self.produce_fact(subject, object))
         print(f"Produced {len(new_triples)} new facts for rule {self}")
 
         graph_size = len(graph)
@@ -213,6 +256,12 @@ class RealWorldRule(object):
         return graph
 
     def _enforce_multi_literal(self, graph: Graph, reflexiveness: bool = False) -> Graph:
+        """
+        For rules with a multiple literals in the premise, enforcing is done via SPARQL queries.
+        :param graph: the Graph object in which the rule is enforced
+        :param reflexiveness: if True, reflexive edges are also added to the graph
+        :return: the new graph, in which this rule is enforced
+        """
         query = self.full_query_pattern()
         print(f"Query for {self}: {query}")
         result = graph.query(query)
@@ -222,7 +271,7 @@ class RealWorldRule(object):
         for subject, object in tqdm(result):
             if not reflexiveness and subject == object:
                 continue
-            fact = self._produce_fact(subject, object)
+            fact = self.produce_fact(subject, object)
             new_triples.append(fact)
         print(f"Produced {len(new_triples)} new facts for rule {self}")
 
@@ -237,31 +286,40 @@ class RealWorldRule(object):
     def _enforce_negative(self, graph: Graph):
         raise NotImplementedError
 
-    def break_by_literal(self, graph: Graph, relation: URIRef):
-        print(f"Breaking for {self} with literal {relation}")
-        query = self.full_query_pattern(include_conclusion=True)
-        print(f"Query for positive facts: {query}")
-        result = list(graph.query(query))
-        # TODO
+    # def break_by_literal(self, graph: Graph, relation: URIRef):
+    #     print(f"Breaking for {self} with literal {relation}")
+    #     query = self.full_query_pattern(include_conclusion=True)
+    #     print(f"Query for positive facts: {query}")
+    #     result = list(graph.query(query))
+    #     # TODO
 
-    def break_randomly(self, graph: Graph, break_chance: float):
-        query = self.full_query_pattern(include_conclusion=True)
-        print(f"Query for {self}: {query}")
-        result = list(graph.query(query))
-
-        positive_facts = set(result)
+    def break_randomly(self, graph: Graph, break_chance: float) -> Tuple[Graph, list]:
+        """
+        Break this rule randomly. It is assumed that the ground truth of this rule is already enforced (i.e., exists in
+        the graph).
+        :param graph: the Graph object in which the rule is broken
+        :param break_chance: how many facts are broken (i.e. 0.2 => 20% of true facts are broken)
+        :return: tuple of the modified graph and the oracle data for this rule
+        """
+        print(f"Breaking for {self} randomly")
+        positive_facts = list(graph.query(self.full_query_pattern(include_conclusion=True)))
+        positive_fact_set = set(positive_facts)
         all_facts = list(graph.query(self.full_query_pattern()))
 
-        # how many facts are true (in the ground truth)
-        correctness_ratio = len(positive_facts) / len(all_facts)
-        # how many facts we break as noise
+        # count how many facts are true (in the ground truth) and how many will be broken
+        correctness_ratio = len(positive_fact_set) / len(all_facts)
         brokenness_ratio = 0
-        facts_to_correctness = {self._produce_fact(fact[0], fact[1]): fact in positive_facts for fact in all_facts}
 
-        for person, film in tqdm(result):
+        # create oracle data (which fact is true and which is false)
+        facts_to_correctness = {}
+        for subject, object in all_facts:
+            facts_to_correctness[self.produce_fact(subject, object)] = (subject, object) in positive_fact_set
+
+        # break facts randomly
+        for subject, object in tqdm(positive_facts):
             number = random.random()
             if number < break_chance:
-                fact = self._produce_fact(person, film)
+                fact = self.produce_fact(subject, object)
                 graph.remove(fact)
                 brokenness_ratio += 1
 
@@ -269,13 +327,12 @@ class RealWorldRule(object):
         oracle_data = [facts_to_correctness, correctness_ratio, brokenness_ratio]
         return graph, oracle_data
 
-
     def break_by_birth_date(self,
                             graph: Graph,
                             birth_date_relation: URIRef,
                             break_chance: float,
-                            threshold: datetime.date,
-                            less_than: bool = True) -> Tuple[Graph, list]:
+                            threshold: date,
+                            comparison: Callable[[date, date], bool] = operator.lt) -> Tuple[Graph, list]:
         query = self.full_query_pattern(include_conclusion=True)
         print(f"Query for {self}: {query}")
         result = list(graph.query(query))
@@ -287,20 +344,17 @@ class RealWorldRule(object):
         correctness_ratio = len(positive_facts) / len(all_facts)
         # how many facts we break as noise
         brokenness_ratio = 0
-        facts_to_correctness = {self._produce_fact(fact[0], fact[1]): fact in positive_facts for fact in all_facts}
+        facts_to_correctness = {self.produce_fact(fact[0], fact[1]): fact in positive_facts for fact in all_facts}
 
         for person, film in tqdm(result):
             birth_date_query = list(graph.triples((person, birth_date_relation, None)))
             if not birth_date_query:
                 continue
             birth_date_literal: Literal = birth_date_query[0][2]
-            if (
-                (less_than and birth_date_literal.value < threshold) or
-                (not less_than and birth_date_literal.value >= threshold)
-            ):
+            if comparison(birth_date_literal.value, threshold):
                 number = random.random()
                 if number < break_chance:
-                    fact = self._produce_fact(person, film)
+                    fact = self.produce_fact(person, film)
                     graph.remove(fact)
                     brokenness_ratio += 1
 
@@ -308,32 +362,44 @@ class RealWorldRule(object):
         oracle_data = [facts_to_correctness, correctness_ratio, brokenness_ratio]
         return graph, oracle_data
 
-    def get_distribution(self, graph: Graph):
-        print("Gathering objects")
-        objects = set()
-        for _, _, object in tqdm(graph.triples((None, self.premise[0].relation, None))):
-            objects.add(object)
-        print("Building distribution")
-        distribution = {}
-        for query_object in tqdm(objects):
-            triples = graph.triples((None, self.conclusion.relation, query_object))
-            num_founders = len(list(triples))
-            if num_founders not in distribution:
-                distribution[num_founders] = 0
-            distribution[num_founders] += 1
-        return distribution
+    # def get_distribution(self, graph: Graph):
+    #     print("Gathering objects")
+    #     objects = set()
+    #     for _, _, object in tqdm(graph.triples((None, self.premise[0].relation, None))):
+    #         objects.add(object)
+    #     print("Building distribution")
+    #     distribution = {}
+    #     for query_object in tqdm(objects):
+    #         triples = graph.triples((None, self.conclusion.relation, query_object))
+    #         num_founders = len(list(triples))
+    #         if num_founders not in distribution:
+    #             distribution[num_founders] = 0
+    #         distribution[num_founders] += 1
+    #     return distribution
 
-    def evaluate_rule(self, graph: Graph, reflexiveness: bool = False):
+    def evaluate_rule(self, graph: Graph, reflexiveness: bool = False) -> float:
+        """
+        Calculate for how many facts this rule is true. E.g., 1.0 means that for all cases in which the premise of this
+        rule is true the conclusion is also true.
+        :param graph: the graph containing all facts
+        :param reflexiveness: if True, reflexive edges (in the conclusion) are also considered
+        :return: in how many cases this rule is True as float in [0.0, 1.0]
+        """
         result = list(graph.query(self.full_query_pattern()))
         invalid_count = 0
         for subject, object in tqdm(result):
             if not reflexiveness and subject == object:
                 continue
-            invalid_count += self._produce_fact(subject, object) not in graph
+            invalid_count += self.produce_fact(subject, object) not in graph
         return 1.0 - (invalid_count / len(result))
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
+        """
+        Parse a serialized Rudik rule in an object of this class.
+        :param rule_dict: Rudik data as dictionary
+        :return: the object of this class
+        """
         graph_iri = rule_dict["graph_iri"]
         rule_type = rule_dict["rule_type"]
         rudik_premise = rule_dict["premise_triples"]
@@ -370,6 +436,12 @@ class RealWorldRule(object):
 
     @classmethod
     def parse_amie(cls, line: Dict[str, str]) -> 'RealWorldRule':
+        """
+        Parse a serialized AMIE rule in an object of this class.
+        :param line: parsed CSV line of the AMIE file (keys are the column names and values are the values of that
+                     column)
+        :return: the object of this class
+        """
         literal_length = 3
 
         rule_str = line["Rule"]
