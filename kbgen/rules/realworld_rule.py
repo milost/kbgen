@@ -58,7 +58,7 @@ class RealWorldRule(object):
 
     def _to_rudik_str(self):
         """
-        Format the rule in the AMIE format: relation1(object, subject) => relation2(subject, object)
+        Format the rule in the Rudik format: relation1(object, subject) => relation2(subject, object)
         """
         return f"{self.rudik_premise_str} => {self.rudik_conclusion_str}"
 

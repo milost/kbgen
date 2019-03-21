@@ -2,7 +2,7 @@ import datetime
 import operator
 import pickle
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List
 
 from rdflib import Graph, URIRef, Literal
 from argparse import ArgumentParser, Namespace
@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from kbgen.rules.systematic_rule_breaking import break_by_birth_date
 from kbgen.util_models import RealWorldOracle
-from kbgen.rules import RealWorldRuleSet
+from kbgen.rules import RealWorldRuleSet, RealWorldRule
 
 
 def cli_args() -> Namespace:
@@ -48,39 +48,45 @@ def save_mangled_graph(graph: Graph,
                 file.write(f"{line}\n")
 
 
-def break_by_date(graph: Graph,
-                  rules: RealWorldRuleSet,
-                  threshold: datetime.date,
-                  break_chance: float) -> Tuple[Graph, RealWorldOracle]:
-    oracle_facts_correctness = {}
-    oracle_facts_correctness_ratio = {}
-    oracle_facts_brokenness_ratio = {}
-    for rule in rules.rules:
-        oracle_facts_correctness[rule] = {}
-        graph, oracle_data = break_by_birth_date(rule=rule,
-                                                 graph=graph,
-                                                 birth_date_relation=URIRef("wasBornOnDate"),
-                                                 break_chance=break_chance,
-                                                 comparison_date=threshold,
-                                                 comparison=operator.lt)
-        facts_correctness, correctness_ratio, brokenness_ratio = oracle_data
-        oracle_facts_correctness[rule] = facts_correctness
-        oracle_facts_correctness_ratio[rule] = correctness_ratio
-        oracle_facts_brokenness_ratio[rule] = brokenness_ratio
+def method_for_rule(rule: RealWorldRule):
+    return {
+        "created(subject, object) & produced(subject, object) => directed(subject, object)": {
+            "method": break_by_birth_date,
+            "arguments": {
+                "rule": rule,
+                "birth_date_relation": URIRef("wasBornOnDate"),
+                "comparison_date": datetime.date(year=1950, month=1, day=1),
+                "comparison": operator.lt,
+                "break_chance": 0.7
+            }
+        }
+    }[rule._to_rudik_str()]
 
-    oracle = RealWorldOracle(facts_to_correctness=oracle_facts_correctness,
-                             rules_to_correctness_ratio=oracle_facts_correctness_ratio,
-                             rules_to_brokenness_ratio=oracle_facts_brokenness_ratio)
-    return graph, oracle
+
+def break_systematic(graph: Graph, rules: RealWorldRuleSet) -> Tuple[Graph, RealWorldOracle]:
+    def break_function(rule: RealWorldRule, graph: Graph):
+        systematic_method_data = method_for_rule(rule)
+        method = systematic_method_data["method"]
+        arguments = systematic_method_data["arguments"]
+        return method(graph=graph, **arguments)
+
+    return break_rules(rules=rules.rules, break_function=break_function, graph=graph)
 
 
 def break_randomly(graph: Graph, rules: RealWorldRuleSet, break_chance: float) -> Tuple[Graph, RealWorldOracle]:
+    def break_function(rule: RealWorldRule, **kwargs):
+        return rule.break_randomly(**kwargs)
+
+    return break_rules(rules=rules.rules, break_function=break_function, graph=graph, break_chance=break_chance)
+
+
+def break_rules(rules: List[RealWorldRule], break_function: callable, **kwargs) -> Tuple[Graph, RealWorldOracle]:
     oracle_facts_correctness = {}
     oracle_facts_correctness_ratio = {}
     oracle_facts_brokenness_ratio = {}
-    for rule in rules.rules:
+    for rule in rules:
         oracle_facts_correctness[rule] = {}
-        graph, oracle_data = rule.break_randomly(graph, break_chance=break_chance)
+        graph, oracle_data = break_function(rule, **kwargs)
         facts_correctness, correctness_ratio, brokenness_ratio = oracle_data
         oracle_facts_correctness[rule] = facts_correctness
         oracle_facts_correctness_ratio[rule] = correctness_ratio
@@ -108,8 +114,7 @@ def main():
     if args.random:
         graph, oracle = break_randomly(graph, rules, break_chance=0.3)
     else:
-        threshold = datetime.date(year=1950, month=1, day=1)
-        graph, oracle = break_by_date(graph, rules, threshold=threshold, break_chance=0.7)
+        graph, oracle = break_systematic(graph, rules)
 
     save_mangled_graph(graph, oracle, input_path, random=args.random)
 
