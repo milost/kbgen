@@ -5,6 +5,8 @@ from typing import List
 from rdflib import Graph
 from argparse import ArgumentParser, Namespace
 
+from tqdm import tqdm
+
 from kbgen.rules import RealWorldRuleSet, RealWorldRule
 
 
@@ -28,7 +30,7 @@ def main():
     print(f"Loading rules from {args.rules_path}")
     rules: List[RealWorldRule] = RealWorldRuleSet.parse_amie(args.rules_path).rules
 
-    for rule in rules:
+    for rule in tqdm(rules):
         rule.plot_frequency_distribution(graph)
 
 
