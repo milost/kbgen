@@ -1,4 +1,5 @@
 import datetime
+import operator
 import pickle
 from pathlib import Path
 from typing import Tuple
@@ -8,6 +9,7 @@ from argparse import ArgumentParser, Namespace
 
 from tqdm import tqdm
 
+from kbgen.rules.systematic_rule_breaking import break_by_birth_date
 from kbgen.util_models import RealWorldOracle
 from kbgen.rules import RealWorldRuleSet
 
@@ -55,10 +57,12 @@ def break_by_date(graph: Graph,
     oracle_facts_brokenness_ratio = {}
     for rule in rules.rules:
         oracle_facts_correctness[rule] = {}
-        graph, oracle_data = rule.break_by_birth_date(graph,
-                                                      birth_date_relation=URIRef("wasBornOnDate"),
-                                                      break_chance=break_chance,
-                                                      threshold=threshold)
+        graph, oracle_data = break_by_birth_date(rule=rule,
+                                                 graph=graph,
+                                                 birth_date_relation=URIRef("wasBornOnDate"),
+                                                 break_chance=break_chance,
+                                                 comparison_date=threshold,
+                                                 comparison=operator.lt)
         facts_correctness, correctness_ratio, brokenness_ratio = oracle_data
         oracle_facts_correctness[rule] = facts_correctness
         oracle_facts_correctness_ratio[rule] = correctness_ratio

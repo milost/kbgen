@@ -1,9 +1,7 @@
-import operator
 import random
-from datetime import date
-from typing import Optional, List, Tuple, Dict, Callable
+from typing import Optional, List, Tuple, Dict
 
-from rdflib import URIRef, Graph, Literal
+from rdflib import URIRef, Graph
 from tqdm import tqdm
 
 from .realworld_literal import RealWorldLiteral
@@ -322,41 +320,6 @@ class RealWorldRule(object):
                 fact = self.produce_fact(subject, object)
                 graph.remove(fact)
                 brokenness_ratio += 1
-
-        brokenness_ratio /= len(all_facts)
-        oracle_data = [facts_to_correctness, correctness_ratio, brokenness_ratio]
-        return graph, oracle_data
-
-    def break_by_birth_date(self,
-                            graph: Graph,
-                            birth_date_relation: URIRef,
-                            break_chance: float,
-                            threshold: date,
-                            comparison: Callable[[date, date], bool] = operator.lt) -> Tuple[Graph, list]:
-        query = self.full_query_pattern(include_conclusion=True)
-        print(f"Query for {self}: {query}")
-        result = list(graph.query(query))
-
-        positive_facts = set(result)
-        all_facts = list(graph.query(self.full_query_pattern()))
-
-        # how many facts are true (in the ground truth)
-        correctness_ratio = len(positive_facts) / len(all_facts)
-        # how many facts we break as noise
-        brokenness_ratio = 0
-        facts_to_correctness = {self.produce_fact(fact[0], fact[1]): fact in positive_facts for fact in all_facts}
-
-        for person, film in tqdm(result):
-            birth_date_query = list(graph.triples((person, birth_date_relation, None)))
-            if not birth_date_query:
-                continue
-            birth_date_literal: Literal = birth_date_query[0][2]
-            if comparison(birth_date_literal.value, threshold):
-                number = random.random()
-                if number < break_chance:
-                    fact = self.produce_fact(person, film)
-                    graph.remove(fact)
-                    brokenness_ratio += 1
 
         brokenness_ratio /= len(all_facts)
         oracle_data = [facts_to_correctness, correctness_ratio, brokenness_ratio]
