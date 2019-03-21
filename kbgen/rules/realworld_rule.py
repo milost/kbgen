@@ -362,28 +362,26 @@ class RealWorldRule(object):
         print(f"Comparing distributions for rule {self} with property {subject_property}")
         all_facts = list(graph.query(self.full_query_pattern()))
         all_values = set()
-        for subject, _ in all_facts:
-            subject_properties = list(graph.triples((subject, subject_property, None)))
-            # this subject does not have the property
-            if not subject_property:
-                continue
-            all_values.add(subject_properties[0][2])
+        for subject, _ in tqdm(all_facts):
+            properties = list(graph.triples((subject, subject_property, None)))
+            if properties:
+                all_values.add(properties[0][2])
 
         all_values = {value: index for index, value in enumerate(sorted(list(all_values)))}
 
+        print("Building distributions")
         positive_distribution = np.zeros(shape=[len(all_values)], dtype=np.int64)
         negative_distribution = np.zeros(shape=[len(all_values)], dtype=np.int64)
         positive_facts = set(graph.query(self.full_query_pattern(include_conclusion=True)))
-        for subject, object in all_facts:
-            subject_properties = list(graph.triples((subject, subject_property, None)))
-            # this subject does not have the property
-            if not subject_property:
+        for subject, object in tqdm(all_facts):
+            properties = list(graph.triples((subject, subject_property, None)))
+            if not properties:
                 continue
-            property_value = subject_properties[0][2]
+            value = properties[0][2]
             if (subject, object) in positive_facts:
-                positive_distribution[all_values[property_value]] += 1
+                positive_distribution[all_values[value]] += 1
             else:
-                negative_distribution[all_values[property_value]] += 1
+                negative_distribution[all_values[value]] += 1
 
         return entropy(positive_distribution, negative_distribution)
 
