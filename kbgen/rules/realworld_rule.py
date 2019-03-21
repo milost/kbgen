@@ -1,10 +1,13 @@
 import random
+
 import numpy as np
 from typing import Optional, List, Tuple, Dict
 
 from rdflib import URIRef, Graph
 from scipy.stats import entropy
 from tqdm import tqdm
+
+from plotly import plotly, figure_factory, graph_objs
 
 from .realworld_literal import RealWorldLiteral
 
@@ -383,19 +386,34 @@ class RealWorldRule(object):
             else:
                 negative_distribution[all_values[value]] += 1
 
+        # # plot with plotly
+        # plot_data = [list(data.tolist()) for data in [positive_distribution, negative_distribution]]
+        # labels = ["Positive samples", "Negative Samples"]
+        # figure = figure_factory.create_distplot(hist_data=plot_data,
+        #                                         group_labels=labels)
+
         return entropy(positive_distribution, negative_distribution), positive_distribution, negative_distribution
 
-    def compute_frequency_distribution(self, graph: Graph):
+    def plot_frequency_distribution(self, graph: Graph):
         print(f"Computing frequency distribution for rule {self}")
-        all_facts = list(graph.query(self.full_query_pattern()))
         frequency_distribution = {}
-        for subject, _ in tqdm(all_facts):
-            properties = set([triple[1] for triple in graph.triples((subject, None, None))])
+        for subject, _ in tqdm(graph.query(self.full_query_pattern())):
+            properties = set([str(triple[1]) for triple in graph.triples((subject, None, None))])
             for property in properties:
                 if property not in frequency_distribution:
                     frequency_distribution[property] = 0
                 frequency_distribution[property] += 1
-        return frequency_distribution
+        frequency_distribution = sorted(list(frequency_distribution.items()), key=lambda x: x[1], reverse=True)
+
+        # plot with plotly
+        x_data, y_data = zip(*frequency_distribution)
+        bar_chart = graph_objs.Bar(x=x_data, y=y_data)
+        layout = graph_objs.Layout(title=f"Frequency distribution for {self}")
+        figure = graph_objs.Figure(data=[bar_chart], layout=layout)
+
+        filename = f"freq_dist_{self}"
+        url = plotly.plot(figure_or_data=figure, filename=filename[:min(len(filename), 100)], auto_open=False)
+        print(f"Plotted frequency distribution of {self} to {url}")
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
