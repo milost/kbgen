@@ -415,8 +415,8 @@ class RealWorldRule(object):
         # url = plotly.plot(figure_or_data=figure, filename=filename[:min(len(filename), 100)], auto_open=False)
         # print(f"Plotted frequency distribution of {self} to {url}")
 
-        filename = f"frequency_distribution_{self}.html".replace(" ", "_")
-        offline.plot(figure_or_data=figure, filename=filename, auto_open=False)
+        filename = f"frequency_distribution_{self._to_amie_str()}.html".replace(" ", "_")
+        offline.plot(figure_or_data=figure, filename=f"frequency_distributions/{filename}", auto_open=False)
         print(f"Plotted frequency distribution of {self} to {filename}")
 
     @classmethod
