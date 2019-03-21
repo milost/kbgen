@@ -395,9 +395,8 @@ class RealWorldRule(object):
         return entropy(positive_distribution, negative_distribution), positive_distribution, negative_distribution
 
     def plot_frequency_distribution(self, graph: Graph, plot_dir: str):
-        # print(f"Computing frequency distribution for rule {self}")
         frequency_distribution = {}
-        for subject, _ in tqdm(graph.query(self.full_query_pattern()), position=1):
+        for subject, _ in tqdm(graph.query(self.full_query_pattern()), position=1, desc=str(self)):
             properties = set([str(triple[1]) for triple in graph.triples((subject, None, None))])
             for property in properties:
                 if property not in frequency_distribution:
