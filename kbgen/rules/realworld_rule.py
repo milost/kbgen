@@ -385,6 +385,18 @@ class RealWorldRule(object):
 
         return entropy(positive_distribution, negative_distribution), positive_distribution, negative_distribution
 
+    def compute_frequency_distribution(self, graph: Graph):
+        print(f"Computing frequency distribution for rule {self}")
+        all_facts = list(graph.query(self.full_query_pattern()))
+        frequency_distribution = {}
+        for subject, _ in tqdm(all_facts):
+            properties = set([triple[1] for triple in graph.triples((subject, None, None))])
+            for property in properties:
+                if property not in frequency_distribution:
+                    frequency_distribution[property] = 0
+                frequency_distribution[property] += 1
+        return frequency_distribution
+
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':
         """
