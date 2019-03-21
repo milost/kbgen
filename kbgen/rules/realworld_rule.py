@@ -394,10 +394,10 @@ class RealWorldRule(object):
 
         return entropy(positive_distribution, negative_distribution), positive_distribution, negative_distribution
 
-    def plot_frequency_distribution(self, graph: Graph):
-        print(f"Computing frequency distribution for rule {self}")
+    def plot_frequency_distribution(self, graph: Graph, plot_dir: str):
+        # print(f"Computing frequency distribution for rule {self}")
         frequency_distribution = {}
-        for subject, _ in tqdm(graph.query(self.full_query_pattern())):
+        for subject, _ in tqdm(graph.query(self.full_query_pattern()), position=1):
             properties = set([str(triple[1]) for triple in graph.triples((subject, None, None))])
             for property in properties:
                 if property not in frequency_distribution:
@@ -416,8 +416,8 @@ class RealWorldRule(object):
         # print(f"Plotted frequency distribution of {self} to {url}")
 
         filename = f"frequency_distribution_{self._to_amie_str()}.html".replace(" ", "_").replace("?", "")
-        offline.plot(figure_or_data=figure, filename=f"frequency_distributions/{filename}", auto_open=False)
-        print(f"Plotted frequency distribution of {self} to {filename}")
+        offline.plot(figure_or_data=figure, filename=f"{plot_dir}/{filename}", auto_open=False)
+        # print(f"Plotted frequency distribution of {self} to {filename}")
 
     @classmethod
     def parse_rudik(cls, rule_dict: dict) -> 'RealWorldRule':

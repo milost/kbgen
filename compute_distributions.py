@@ -30,8 +30,11 @@ def main():
     print(f"Loading rules from {args.rules_path}")
     rules: List[RealWorldRule] = RealWorldRuleSet.parse_amie(args.rules_path).rules
 
-    for rule in tqdm(rules):
-        rule.plot_frequency_distribution(graph)
+    plot_dir = "frequency_distributions"
+    print(f"Computing frequency distribution for {len(rules)} rules")
+    print(f"Saving plots to {plot_dir}")
+    for rule in tqdm(rules, position=0):
+        rule.plot_frequency_distribution(graph, plot_dir)
 
 
 if __name__ == '__main__':
