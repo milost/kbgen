@@ -1,6 +1,8 @@
 import json
 from typing import Dict, TextIO, Optional
 
+from rdflib import Graph, URIRef
+
 from ..rules import RealWorldRule
 
 
@@ -48,3 +50,30 @@ class RealWorldOracle(object):
             json.dump(data_dict, file)
         else:
             return json.dumps(data_dict)
+
+    @classmethod
+    def from_gold_standard(cls, rule: RealWorldRule, graph: Graph, gold_standard_dict: dict):
+        gold_standard = {}
+        for example in gold_standard_dict["examples"]:
+            key = URIRef(example["subject"]), URIRef(example["object"])
+            gold_standard[key] = example["gold_standard"]
+
+        predicate = rule.conclusion.relation
+        facts_to_correctness = {}
+        num_correct_facts = 0
+        num_broken_facts = 0
+        for subject, object in graph.query(rule.full_query_pattern()):
+            fact = subject, predicate, object
+
+            is_correct = gold_standard[(subject, object)]
+            facts_to_correctness[fact] = is_correct
+            num_correct_facts += is_correct
+
+            is_broken = is_correct and fact not in graph
+            num_broken_facts += is_broken
+
+        correctness_ratio = num_correct_facts / len(gold_standard)
+        brokenness_ratio = num_broken_facts / len(gold_standard)
+        return cls(facts_to_correctness={rule: facts_to_correctness},
+                   rules_to_correctness_ratio={rule: correctness_ratio},
+                   rules_to_brokenness_ratio={rule: brokenness_ratio})

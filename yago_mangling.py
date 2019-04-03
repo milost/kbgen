@@ -31,7 +31,7 @@ def save_mangled_graph(graph: Graph,
     suffix = "mangled_random" if random else "mangled_systematic"
 
     oracle_output = f"{input_file.parent}/{input_file.stem}_{suffix}_oracle.json"
-    print(f"Saving graph to {oracle_output}")
+    print(f"Saving oracle to {oracle_output}")
     oracle.to_json(open(oracle_output, "w"))
 
     pickle_output = f"{input_file.parent}/{input_file.stem}_{suffix}{input_file.suffix}"
