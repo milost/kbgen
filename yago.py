@@ -174,14 +174,14 @@ def main():
         graph = load_yago3_core(args.core, graph)
         if date_file:
             graph = load_yago_dates(date_file, graph)
-        output = f"yago3"
     else:
         graph = load_yago2_core(args.core, graph)
         if date_file:
             graph = load_birth_dates(date_file, graph)
-        output = f"yago2"
 
-    output = f"{output}/graph.bin"
+    output_dir = Path("yago3" if args.yago3 else "yago2")
+    output_dir.mkdir(exist_ok=True)
+    output = f"{output_dir}/graph.bin"
     print(f"Saving graph to {output}")
     with open(output, "wb") as graph_file:
         pickle.dump(graph, graph_file, protocol=pickle.HIGHEST_PROTOCOL)
