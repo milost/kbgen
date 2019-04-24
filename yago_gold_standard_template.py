@@ -50,7 +50,7 @@ def main():
         template["examples"] = examples
         filename = f"rule_{rule.hashcode}_gold_standard.json"
         with open(filename, "w") as file:
-            json.dump(template, file)
+            json.dump(template, file, indent=4)
 
 
 if __name__ == '__main__':
