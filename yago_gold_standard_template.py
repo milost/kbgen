@@ -48,9 +48,9 @@ def main():
         examples = list(graph.query(rule.full_query_pattern()))
         examples = [create_example(example, example in positive_examples, id) for id, example in enumerate(examples)]
         template["examples"] = examples
-        filename = f"rule_{rule.hashcode}_gold_standard.json"
+        filename = f"yago_gold_standard/rule_{rule.hashcode}_gold_standard.json"
         with open(filename, "w") as file:
-            json.dump(template, file, indent=4)
+            json.dump(template, file, indent=4, sort_keys=True)
 
 
 if __name__ == '__main__':
