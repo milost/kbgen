@@ -501,7 +501,7 @@ class RealWorldRule(object):
 
         rudik_conclusion, rudik_conclusion_str = conclusion.serialize_to_rudik(id_to_role)
 
-        hashcode = hashlib.sha1(f"{rudik_premise_str} => {rudik_conclusion_str}")
+        hashcode = hashlib.sha1(f"{rudik_premise_str} => {rudik_conclusion_str}".encode()).hexdigest()
 
         return cls(premise=premise,
                    conclusion=conclusion,

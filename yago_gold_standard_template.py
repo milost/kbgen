@@ -50,7 +50,7 @@ def main():
         template["examples"] = examples
         filename = f"yago_gold_standard/rule_{rule.hashcode}_gold_standard.json"
         with open(filename, "w") as file:
-            json.dump(template, file, indent=4, sort_keys=True)
+            json.dump(template, file, indent=4)
 
 
 if __name__ == '__main__':

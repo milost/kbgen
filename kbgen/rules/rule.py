@@ -164,7 +164,7 @@ class Rule(object):
 
         rudik_premise = [convert_literal(literal) for literal in self.antecedents]
         rudik_conclusion = convert_literal(conclusion_literal)
-        hashcode = hashlib.sha1(json.dumps(rudik_premise) + json.dumps(rudik_conclusion))
+        hashcode = hashlib.sha1(f"{json.dumps(rudik_premise)} {json.dumps(rudik_conclusion)}".encode()).hexdigest()
 
         return RudikRule(premise=self.antecedents,
                          conclusion=self.consequents,
