@@ -1,4 +1,5 @@
 import random
+import hashlib
 
 import numpy as np
 from typing import Optional, List, Tuple, Dict
@@ -500,7 +501,7 @@ class RealWorldRule(object):
 
         rudik_conclusion, rudik_conclusion_str = conclusion.serialize_to_rudik(id_to_role)
 
-        hashcode = hash(f"{rudik_premise_str} => {rudik_conclusion_str}")
+        hashcode = hashlib.sha1(f"{rudik_premise_str} => {rudik_conclusion_str}")
 
         return cls(premise=premise,
                    conclusion=conclusion,
