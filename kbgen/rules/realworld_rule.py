@@ -169,7 +169,7 @@ class RealWorldRule(object):
             "premise": self.rudik_premise_str,
             "conclusion_triple": self.rudik_conclusion,
             "conclusion": self.rudik_conclusion_str,
-            "query_patten": self.full_query_pattern()
+            "query_pattern": self.full_query_pattern()
         }
 
     def is_negative(self):
