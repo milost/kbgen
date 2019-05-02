@@ -45,7 +45,7 @@ def main():
     for rule in tqdm(ruleset.rules):
         template = {"rule": rule.to_dict()}
         positive_examples = set(graph.query(rule.full_query_pattern(include_conclusion=True)))
-        examples = list(graph.query(rule.full_query_pattern()))
+        examples = set(graph.query(rule.full_query_pattern()))
         examples = [create_example(example, example in positive_examples, id) for id, example in enumerate(examples)]
         template["examples"] = examples
         filename = f"yago_gold_standard/rule_{rule.hashcode}_gold_standard.json"
