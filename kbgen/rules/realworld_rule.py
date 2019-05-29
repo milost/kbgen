@@ -461,11 +461,12 @@ class RealWorldRule(object):
                    graph_iri=graph_iri)
 
     @classmethod
-    def parse_amie(cls, line: Dict[str, str]) -> 'RealWorldRule':
+    def parse_amie(cls, line: Dict[str, str], rule_type: bool = True) -> 'RealWorldRule':
         """
         Parse a serialized AMIE rule in an object of this class.
         :param line: parsed CSV line of the AMIE file (keys are the column names and values are the values of that
                      column)
+        :param rule_type: if True the rules in the input file are positive, if False they are negative
         :return: the object of this class
         """
         literal_length = 3
@@ -510,5 +511,5 @@ class RealWorldRule(object):
                    rudik_conclusion=rudik_conclusion,
                    rudik_conclusion_str=rudik_conclusion_str,
                    hashcode=hashcode,
-                   rule_type=True,
+                   rule_type=rule_type,
                    graph_iri=None)

@@ -52,12 +52,12 @@ class RealWorldRuleSet(object):
         return cls(rules)
 
     @classmethod
-    def parse_amie(cls, rule_file: str) -> 'RealWorldRuleSet':
+    def parse_amie(cls, rule_file: str, rule_type: bool = True) -> 'RealWorldRuleSet':
         csv_lines = read_csv(rule_file)
         rules = []
         for line in csv_lines:
             try:
-                rules.append(RealWorldRule.parse_amie(line))
+                rules.append(RealWorldRule.parse_amie(line, rule_type))
             except RuntimeError as e:
                 print(e)
         print(f"Rules successfully parsed: {len(rules)}...")

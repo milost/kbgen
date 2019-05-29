@@ -15,6 +15,7 @@ def cli_args() -> Namespace:
     parser = ArgumentParser(description="Mangle a yago graph")
     parser.add_argument("input", type=str, default=None, help="path to the binary graph file")
     parser.add_argument("-r", "--rules_path", type=str, help="the rule file containing the amie rules")
+    parser.add_argument("--negative", dest='negative', action='store_true', help="set if the rules are negative rules")
     return parser.parse_args()
 
 
@@ -33,6 +34,7 @@ def main():
     args = cli_args()
     print(args)
 
+    rule_type = not args.negative
     input_path = Path(args.input)
 
     print(f"Loading graph from {input_path}")
@@ -40,13 +42,17 @@ def main():
         graph: Graph = pickle.load(graph_file)
 
     print(f"Loading rules from {args.rules_path}")
-    ruleset = RealWorldRuleSet.parse_amie(args.rules_path)
+    ruleset = RealWorldRuleSet.parse_amie(args.rules_path, rule_type=rule_type)
 
     for rule in tqdm(ruleset.rules):
         template = {"rule": rule.to_dict()}
-        positive_examples = set(graph.query(rule.full_query_pattern(include_conclusion=True)))
+        conclusion_examples = set(graph.query(rule.full_query_pattern(include_conclusion=True)))
         examples = set(graph.query(rule.full_query_pattern()))
-        examples = [create_example(example, example in positive_examples, id) for id, example in enumerate(examples)]
+
+        # For positive rules, the examples needs to be in the conclusion examples, for negative rules, they must not be
+        # in the negative examples
+        examples = [create_example(example, rule_type == (example in conclusion_examples), id)
+                    for id, example in enumerate(examples)]
         template["examples"] = examples
         filename = f"yago_gold_standard/rule_{rule.hashcode}_gold_standard.json"
         with open(filename, "w") as file:
