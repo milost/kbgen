@@ -1,5 +1,6 @@
 import json
 import pickle
+import numpy as np
 from pathlib import Path
 from typing import Tuple
 
@@ -15,7 +16,9 @@ def cli_args() -> Namespace:
     parser = ArgumentParser(description="Mangle a yago graph")
     parser.add_argument("input", type=str, default=None, help="path to the binary graph file")
     parser.add_argument("-r", "--rules_path", type=str, help="the rule file containing the amie rules")
-    parser.add_argument("--negative", dest='negative', action='store_true', help="set if the rules are negative rules")
+    parser.add_argument("--negative", dest="negative", action="store_true", help="set if the rules are negative rules")
+    parser.add_argument("--sample", type=int, default=None, help="the number of facts to sample from rules that are "
+                                                                 "larger than this sample size")
     return parser.parse_args()
 
 
@@ -48,6 +51,8 @@ def main():
         template = {"rule": rule.to_dict()}
         conclusion_examples = set(graph.query(rule.full_query_pattern(include_conclusion=True)))
         examples = set(graph.query(rule.full_query_pattern()))
+        if args.sample is not None and len(examples) > args.sample:
+            examples = np.random.choice(list(examples), size=args.sample, replace=False).tolist()
 
         # For positive rules, the examples needs to be in the conclusion examples, for negative rules, they must not be
         # in the negative examples
