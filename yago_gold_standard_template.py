@@ -52,7 +52,10 @@ def main():
         conclusion_examples = set(graph.query(rule.full_query_pattern(include_conclusion=True)))
         examples = set(graph.query(rule.full_query_pattern()))
         if args.sample is not None and len(examples) > args.sample:
-            examples = np.random.choice(list(examples), size=args.sample, replace=False).tolist()
+            # can't sample directly from examples, since numpy sees the tuple element as another dimension
+            indices = np.random.choice(len(examples), size=args.sample, replace=False)
+            examples = list(examples)
+            examples = [examples[index] for index in indices]
 
         # For positive rules, the examples needs to be in the conclusion examples, for negative rules, they must not be
         # in the negative examples
