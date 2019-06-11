@@ -185,8 +185,8 @@ def load_yago_literals(file_name: str, graph: Graph):
     return graph
 
 
-def load_enriched_yago(graph: Graph):
-    data_dir = Path("yago2_enriched/data")
+def load_enriched_yago(graph: Graph, output_dir: str):
+    data_dir = Path(f"{output_dir}/data")
     mode_dict = {
         "isAffiliatedTo.tsv": Yago2Mode.FACTS,
         "wasCreatedOnDate.tsv": Yago2Mode.DATES,
@@ -211,6 +211,7 @@ def main():
     elif args.yago2_enriched:
         graph = load_yago2_core(args.core, graph)
         output_dir = "yago2_enriched"
+        graph = load_enriched_yago(graph, output_dir=output_dir)
     else:
         graph = load_yago2_core(args.core, graph)
         if date_file:
