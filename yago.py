@@ -1,5 +1,6 @@
 import pickle
 from argparse import ArgumentParser, Namespace
+from enum import Enum
 from pathlib import Path
 from typing import Callable
 
@@ -10,8 +11,10 @@ from tqdm import tqdm
 def cli_args() -> Namespace:
     parser = ArgumentParser()
     parser.add_argument("core", type=str, default=None, help="path to the yago core file (or directory of yago3 files)")
-    parser.add_argument("--birth_dates", type=str, default=None, help="path to date file")
+    parser.add_argument("--date_file", type=str, default=None, help="path to date file")
     parser.add_argument("--yago3", dest='yago3', action='store_true', help="set if yago3 should be loaded")
+    parser.add_argument("--yago2_enriched", dest='yago2_enriched', action='store_true', help="set if enriched yago2 "
+                                                                                             "should be loaded")
     return parser.parse_args()
 
 
@@ -75,9 +78,28 @@ def clean_uri(uri: str):
     return cleaned
 
 
-def load_birth_dates(file_name: str, graph: Graph):
-    print(f"Reading birth dates from {file_name}")
+class Yago2Mode(Enum):
+    FACTS = 1
+    LITERALS = 2
+    DATES = 3
+
+
+def load_yago2_file(file_name: str, graph: Graph, mode: Yago2Mode):
+    object_function = None
+    triple_type = None
+    if mode == Yago2Mode.FACTS:
+        object_function = lambda object: URIRef(clean_uri(object))
+        triple_type = "facts"
+    elif mode == Yago2Mode.LITERALS:
+        object_function = lambda object: Literal(clean_uri(object), datatype=XSD.string)
+        triple_type = "literals"
+    elif mode == Yago2Mode.DATES:
+        object_function = lambda object: Literal(clean_uri(object), datatype=XSD.date)
+        triple_type = "dates"
+
+    print(f"Reading {triple_type} from {file_name}")
     relation = URIRef(Path(file_name).stem)
+    old_graph_size = len(graph)
 
     # get the total number of lines
     with open(file_name) as yago_file:
@@ -86,15 +108,12 @@ def load_birth_dates(file_name: str, graph: Graph):
     with open(file_name) as yago_file:
         for line in tqdm(yago_file, total=num_lines):
             _, subject, object = line.strip().split("\t")
-            subject = clean_uri(subject)
-            object = Literal(clean_uri(object), datatype=XSD.date)
-            graph.add((URIRef(subject), relation, object))
-    print()
-    print(f"Created graph with {len(graph)} triples")
+            graph.add((URIRef(clean_uri(subject)), relation, object_function(object)))
+    print(f"\nAdded {len(graph) - old_graph_size} {triple_type} to graph")
     return graph
 
 
-def load_yago_dates(file_name: str, graph: Graph):
+def load_yago3_dates(file_name: str, graph: Graph):
     print(f"Reading yago dates from {file_name}")
     graph_size = len(graph)
 
@@ -166,20 +185,39 @@ def load_yago_literals(file_name: str, graph: Graph):
     return graph
 
 
+def load_enriched_yago(graph: Graph):
+    data_dir = Path("yago2_enriched/data")
+    mode_dict = {
+        "isAffiliatedTo.tsv": Yago2Mode.FACTS,
+        "wasCreatedOnDate.tsv": Yago2Mode.DATES,
+        "wasBornOnDate.tsv": Yago2Mode.DATES,
+        "hasGender.tsv": Yago2Mode.LITERALS
+    }
+    for file in data_dir.iterdir():
+        graph = load_yago2_file(file_name=file, graph=graph, mode=mode_dict[file.name])
+
+    return graph
+
+
 def main():
     args = cli_args()
     graph = Graph()
-    date_file = args.birth_dates
+    date_file = args.date_file
     if args.yago3:
         graph = load_yago3_core(args.core, graph)
         if date_file:
-            graph = load_yago_dates(date_file, graph)
+            graph = load_yago3_dates(date_file, graph)
+        output_dir = "yago3"
+    elif args.yago2_enriched:
+        graph = load_yago2_core(args.core, graph)
+        output_dir = "yago2_enriched"
     else:
         graph = load_yago2_core(args.core, graph)
         if date_file:
-            graph = load_birth_dates(date_file, graph)
+            graph = load_yago2_file(date_file, graph, mode=Yago2Mode.DATES)
+        output_dir = "yago2"
 
-    output_dir = Path("yago3" if args.yago3 else "yago2")
+    output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     output = f"{output_dir}/graph.bin"
     print(f"Saving graph to {output}")
