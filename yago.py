@@ -109,7 +109,7 @@ def load_yago2_file(file_name: str, graph: Graph, mode: Yago2Mode):
         for line in tqdm(yago_file, total=num_lines):
             _, subject, object = line.strip().split("\t")
             graph.add((URIRef(clean_uri(subject)), relation, object_function(object)))
-    print(f"\nAdded {len(graph) - old_graph_size} {triple_type} to graph")
+    print(f"Added {len(graph) - old_graph_size} {triple_type} to graph")
     return graph
 
 
