@@ -74,30 +74,3 @@ def read_csv(file_name: str,
         else:
             lines = [row for row in data]
     return lines
-
-
-################################################################################
-# unused methods
-################################################################################
-# from copy import deepcopy
-# from load_tensor_tools import get_roots
-# def level_hierarchy(hier):
-#     if hier is None:
-#         return []
-#
-#     roots = get_roots(hier)
-#     remaining = deepcopy(hier.keys())
-#     level = roots
-#     levels = []
-#     while level:
-#         next_level = []
-#         for n in level:
-#             for c in n.children:
-#                 if c.node_id in remaining:
-#                     next_level.append(c)
-#                     remaining.remove(c.node_id)
-#
-#         levels.append(level)
-#         level = next_level
-#
-#     return levels
